@@ -1778,53 +1778,55 @@ class AlexaRangeController(AlexaCapability):
         if name != "rangeValue":
             raise UnsupportedProperty(name)
 
-        # Return None for unavailable and unknown states.
-        # Allows the Alexa.EndpointHealth Interface to handle the unavailable
-        # state in a stateReport.
         if self.entity.state in (STATE_UNAVAILABLE, STATE_UNKNOWN, None):
             return None
 
-        # Cover Position
-        if self.instance == f"{cover.DOMAIN}.{cover.ATTR_POSITION}":
-            return self.entity.attributes.get(cover.ATTR_CURRENT_POSITION)
+        handler_map = {
+            f"{cover.DOMAIN}.{cover.ATTR_POSITION}": self._get_cover_position,
+            f"{cover.DOMAIN}.tilt": self._get_cover_tilt,
+            f"{fan.DOMAIN}.{fan.ATTR_PERCENTAGE}": self._get_fan_percentage,
+            f"{humidifier.DOMAIN}.{humidifier.ATTR_HUMIDITY}": self._get_humidifier_humidity,
+            f"{input_number.DOMAIN}.{input_number.ATTR_VALUE}": self._get_input_number_value,
+            f"{number.DOMAIN}.{number.ATTR_VALUE}": self._get_number_value,
+            f"{vacuum.DOMAIN}.{vacuum.ATTR_FAN_SPEED}": self._get_vacuum_fan_speed,
+            f"{valve.DOMAIN}.{valve.ATTR_POSITION}": self._get_valve_position,
+        }
 
-        # Cover Tilt
-        if self.instance == f"{cover.DOMAIN}.tilt":
-            return self.entity.attributes.get(cover.ATTR_CURRENT_TILT_POSITION)
-
-        # Fan speed percentage
-        if self.instance == f"{fan.DOMAIN}.{fan.ATTR_PERCENTAGE}":
-            supported = self.entity.attributes.get(ATTR_SUPPORTED_FEATURES, 0)
-            if supported and fan.FanEntityFeature.SET_SPEED:
-                return self.entity.attributes.get(fan.ATTR_PERCENTAGE)
-            return 100 if self.entity.state == fan.STATE_ON else 0
-
-        # Humidifier target humidity
-        if self.instance == f"{humidifier.DOMAIN}.{humidifier.ATTR_HUMIDITY}":
-            # If the humidifier is turned off the target humidity attribute is not set.
-            # We return 0 to make clear we do not know the current value.
-            return self.entity.attributes.get(humidifier.ATTR_HUMIDITY, 0)
-
-        # Input Number Value
-        if self.instance == f"{input_number.DOMAIN}.{input_number.ATTR_VALUE}":
-            return float(self.entity.state)
-
-        # Number Value
-        if self.instance == f"{number.DOMAIN}.{number.ATTR_VALUE}":
-            return float(self.entity.state)
-
-        # Vacuum Fan Speed
-        if self.instance == f"{vacuum.DOMAIN}.{vacuum.ATTR_FAN_SPEED}":
-            speed_list = self.entity.attributes.get(vacuum.ATTR_FAN_SPEED_LIST)
-            speed = self.entity.attributes.get(vacuum.ATTR_FAN_SPEED)
-            if speed_list is not None and speed is not None:
-                return next((i for i, v in enumerate(speed_list) if v == speed), None)
-
-        # Valve Position
-        if self.instance == f"{valve.DOMAIN}.{valve.ATTR_POSITION}":
-            return self.entity.attributes.get(valve.ATTR_CURRENT_POSITION)
-
+        handler = handler_map.get(self.instance)
+        if handler:
+            return handler()
         return None
+
+    def _get_cover_position(self) -> Any:
+        return self.entity.attributes.get(cover.ATTR_CURRENT_POSITION)
+
+    def _get_cover_tilt(self) -> Any:
+        return self.entity.attributes.get(cover.ATTR_CURRENT_TILT_POSITION)
+
+    def _get_fan_percentage(self) -> Any:
+        supported = self.entity.attributes.get(ATTR_SUPPORTED_FEATURES, 0)
+        if supported and fan.FanEntityFeature.SET_SPEED:
+            return self.entity.attributes.get(fan.ATTR_PERCENTAGE)
+        return 100 if self.entity.state == fan.STATE_ON else 0
+
+    def _get_humidifier_humidity(self) -> Any:
+        return self.entity.attributes.get(humidifier.ATTR_HUMIDITY, 0)
+
+    def _get_input_number_value(self) -> Any:
+        return float(self.entity.state)
+
+    def _get_number_value(self) -> Any:
+        return float(self.entity.state)
+
+    def _get_vacuum_fan_speed(self) -> Any:
+        speed_list = self.entity.attributes.get(vacuum.ATTR_FAN_SPEED_LIST)
+        speed = self.entity.attributes.get(vacuum.ATTR_FAN_SPEED)
+        if speed_list is not None and speed is not None:
+            return next((i for i, v in enumerate(speed_list) if v == speed), None)
+        return None
+
+    def _get_valve_position(self) -> Any:
+        return self.entity.attributes.get(valve.ATTR_CURRENT_POSITION)
 
     def configuration(self) -> dict[str, Any] | None:
         """Return configuration with presetResources."""
