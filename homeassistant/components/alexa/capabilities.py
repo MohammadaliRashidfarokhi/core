@@ -1158,27 +1158,35 @@ class AlexaThermostatController(AlexaCapability):
             return None
 
         if name == "thermostatMode":
-            if self.entity.domain == water_heater.DOMAIN:
-                return None
-            preset = self.entity.attributes.get(climate.ATTR_PRESET_MODE)
+            return self._get_thermostat_mode_property(name)
 
-            mode: dict[str, str] | str | None
-            if preset in API_THERMOSTAT_PRESETS:
-                mode = API_THERMOSTAT_PRESETS[preset]
-            elif self.entity.state == STATE_UNKNOWN:
-                return None
-            else:
-                if self.entity.state not in API_THERMOSTAT_MODES:
-                    _LOGGER.error(
-                        "%s (%s) has unsupported state value '%s'",
-                        self.entity.entity_id,
-                        type(self.entity),
-                        self.entity.state,
-                    )
-                    raise UnsupportedProperty(name)
-                mode = API_THERMOSTAT_MODES[HVACMode(self.entity.state)]
-            return mode
+        if name in ("targetSetpoint", "lowerSetpoint", "upperSetpoint"):
+            return self._get_setpoint_property(name)
 
+        raise UnsupportedProperty(name)
+
+    def _get_thermostat_mode_property(self, name: str) -> dict[str, str] | str | None:
+        """Handle the 'thermostatMode' property."""
+        if self.entity.domain == water_heater.DOMAIN:
+            return None
+        preset = self.entity.attributes.get(climate.ATTR_PRESET_MODE)
+
+        if preset in API_THERMOSTAT_PRESETS:
+            return API_THERMOSTAT_PRESETS[preset]
+        if self.entity.state == STATE_UNKNOWN:
+            return None
+        if self.entity.state not in API_THERMOSTAT_MODES:
+            _LOGGER.error(
+                "%s (%s) has unsupported state value '%s'",
+                self.entity.entity_id,
+                type(self.entity),
+                self.entity.state,
+            )
+            raise UnsupportedProperty(name)
+        return API_THERMOSTAT_MODES[HVACMode(self.entity.state)]
+
+    def _get_setpoint_property(self, name: str) -> dict[str, Any] | None:
+        """Handle setpoint properties."""
         unit = self.hass.config.units.temperature_unit
         if name == "targetSetpoint":
             temp = self.entity.attributes.get(ATTR_TEMPERATURE)
@@ -1187,7 +1195,7 @@ class AlexaThermostatController(AlexaCapability):
         elif name == "upperSetpoint":
             temp = self.entity.attributes.get(climate.ATTR_TARGET_TEMP_HIGH)
         else:
-            raise UnsupportedProperty(name)
+            temp = None
 
         if temp is None:
             return None
