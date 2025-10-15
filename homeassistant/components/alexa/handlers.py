@@ -83,6 +83,8 @@ from .errors import (
 )
 from .state_report import AlexaDirective, AlexaResponse, async_enable_proactive_mode
 
+ALEXA_THERMOSTAT_CONTROLLER_NAMESPACE = "Alexa.ThermostatController"
+
 _LOGGER = logging.getLogger(__name__)
 DIRECTIVE_NOT_SUPPORTED = "Entity does not support directive"
 
@@ -875,7 +877,7 @@ async def async_api_set_target_temp(
         response.add_context_property(
             {
                 "name": "targetSetpoint",
-                "namespace": "Alexa.ThermostatController",
+                "namespace": ALEXA_THERMOSTAT_CONTROLLER_NAMESPACE,
                 "value": {"value": temp, "scale": API_TEMP_UNITS[unit]},
             }
         )
@@ -887,7 +889,7 @@ async def async_api_set_target_temp(
         response.add_context_property(
             {
                 "name": "lowerSetpoint",
-                "namespace": "Alexa.ThermostatController",
+                "namespace": ALEXA_THERMOSTAT_CONTROLLER_NAMESPACE,
                 "value": {"value": temp_low, "scale": API_TEMP_UNITS[unit]},
             }
         )
@@ -899,7 +901,7 @@ async def async_api_set_target_temp(
         response.add_context_property(
             {
                 "name": "upperSetpoint",
-                "namespace": "Alexa.ThermostatController",
+                "namespace": ALEXA_THERMOSTAT_CONTROLLER_NAMESPACE,
                 "value": {"value": temp_high, "scale": API_TEMP_UNITS[unit]},
             }
         )
@@ -958,14 +960,14 @@ async def async_api_adjust_target_temp(
         response.add_context_property(
             {
                 "name": "upperSetpoint",
-                "namespace": "Alexa.ThermostatController",
+                "namespace": ALEXA_THERMOSTAT_CONTROLLER_NAMESPACE,
                 "value": {"value": target_temp_high, "scale": API_TEMP_UNITS[unit]},
             }
         )
         response.add_context_property(
             {
                 "name": "lowerSetpoint",
-                "namespace": "Alexa.ThermostatController",
+                "namespace": ALEXA_THERMOSTAT_CONTROLLER_NAMESPACE,
                 "value": {"value": target_temp_low, "scale": API_TEMP_UNITS[unit]},
             }
         )
@@ -985,7 +987,7 @@ async def async_api_adjust_target_temp(
         response.add_context_property(
             {
                 "name": "targetSetpoint",
-                "namespace": "Alexa.ThermostatController",
+                "namespace": ALEXA_THERMOSTAT_CONTROLLER_NAMESPACE,
                 "value": {"value": target_temp, "scale": API_TEMP_UNITS[unit]},
             }
         )
@@ -1068,8 +1070,7 @@ async def async_api_set_thermostat_mode(
     )
     response.add_context_property(
         {
-            "name": "thermostatMode",
-            "namespace": "Alexa.ThermostatController",
+            "namespace": ALEXA_THERMOSTAT_CONTROLLER_NAMESPACE,
             "value": mode,
         }
     )
@@ -1087,6 +1088,8 @@ async def async_api_reportstate(
     """Process a ReportState request."""
     return directive.response(name="StateReport")
 
+
+ALEXA_SECURITY_PANEL_CONTROLLER_NAMESPACE = "Alexa.SecurityPanelController"
 
 @HANDLERS.register(("Alexa.SecurityPanelController", "Arm"))
 async def async_api_arm(
@@ -1125,16 +1128,17 @@ async def async_api_arm(
     )
 
     # return 0 until alarm integration supports an exit delay
-    payload: dict[str, Any] = {"exitDelayInSeconds": 0}
-
+    payload: dict[str, Any] = {
+        "exitDelayInSeconds": 0
+    }
     response = directive.response(
-        name="Arm.Response", namespace="Alexa.SecurityPanelController", payload=payload
+        name="Arm.Response", namespace=ALEXA_SECURITY_PANEL_CONTROLLER_NAMESPACE, payload=payload
     )
 
     response.add_context_property(
         {
             "name": "armState",
-            "namespace": "Alexa.SecurityPanelController",
+            "namespace": ALEXA_SECURITY_PANEL_CONTROLLER_NAMESPACE,
             "value": arm_state,
         }
     )
@@ -1169,18 +1173,15 @@ async def async_api_disarm(
     await hass.services.async_call(
         entity.domain, SERVICE_ALARM_DISARM, data, blocking=True, context=context
     )
-
     response.add_context_property(
         {
             "name": "armState",
-            "namespace": "Alexa.SecurityPanelController",
+            "namespace": ALEXA_SECURITY_PANEL_CONTROLLER_NAMESPACE,
             "value": "DISARMED",
         }
     )
 
     return response
-
-
 @HANDLERS.register(("Alexa.ModeController", "SetMode"))
 async def async_api_set_mode(
     hass: ha.HomeAssistant,
