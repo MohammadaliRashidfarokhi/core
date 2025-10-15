@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import AsyncIterable
+from dataclasses import dataclass
 from typing import Any
 
 import voluptuous as vol
@@ -56,6 +57,7 @@ __all__ = (
     "PipelineEvent",
     "PipelineEventType",
     "PipelineNotFound",
+    "PipelineRunOptions",
     "WakeWordSettings",
     "async_create_default_pipeline",
     "async_get_pipelines",
@@ -89,6 +91,22 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
     return True
 
 
+@dataclass(slots=True)
+class PipelineRunOptions:
+    """Options used to configure a pipeline run."""
+
+    pipeline_id: str | None = None
+    conversation_id: str | None = None
+    tts_audio_output: str | dict[str, Any] | None = None
+    wake_word_settings: WakeWordSettings | None = None
+    audio_settings: AudioSettings | None = None
+    device_id: str | None = None
+    satellite_id: str | None = None
+    start_stage: PipelineStage = PipelineStage.STT
+    end_stage: PipelineStage = PipelineStage.TTS
+    conversation_extra_system_prompt: str | None = None
+
+
 async def async_pipeline_from_audio_stream(
     hass: HomeAssistant,
     *,
@@ -97,40 +115,47 @@ async def async_pipeline_from_audio_stream(
     stt_metadata: stt.SpeechMetadata,
     stt_stream: AsyncIterable[bytes],
     wake_word_phrase: str | None = None,
-    pipeline_id: str | None = None,
-    conversation_id: str | None = None,
-    tts_audio_output: str | dict[str, Any] | None = None,
-    wake_word_settings: WakeWordSettings | None = None,
-    audio_settings: AudioSettings | None = None,
-    device_id: str | None = None,
-    satellite_id: str | None = None,
-    start_stage: PipelineStage = PipelineStage.STT,
-    end_stage: PipelineStage = PipelineStage.TTS,
-    conversation_extra_system_prompt: str | None = None,
+    run_options: PipelineRunOptions | None = None,
+    **legacy_kwargs: Any,
 ) -> None:
     """Create an audio pipeline from an audio stream.
 
     Raises PipelineNotFound if no pipeline is found.
     """
-    with chat_session.async_get_chat_session(hass, conversation_id) as session:
+    if run_options is not None and legacy_kwargs:
+        msg = "Cannot specify both run_options and additional keyword arguments"
+        raise ValueError(msg)
+
+    if run_options is None:
+        if legacy_kwargs:
+            try:
+                run_options = PipelineRunOptions(**legacy_kwargs)
+            except TypeError as err:
+                raise TypeError("Invalid keyword arguments for pipeline run") from err
+        else:
+            run_options = PipelineRunOptions()
+
+    with chat_session.async_get_chat_session(
+        hass, run_options.conversation_id
+    ) as session:
         pipeline_input = PipelineInput(
             session=session,
-            device_id=device_id,
-            satellite_id=satellite_id,
+            device_id=run_options.device_id,
+            satellite_id=run_options.satellite_id,
             stt_metadata=stt_metadata,
             stt_stream=stt_stream,
             wake_word_phrase=wake_word_phrase,
-            conversation_extra_system_prompt=conversation_extra_system_prompt,
+            conversation_extra_system_prompt=run_options.conversation_extra_system_prompt,
             run=PipelineRun(
                 hass,
                 context=context,
-                pipeline=async_get_pipeline(hass, pipeline_id=pipeline_id),
-                start_stage=start_stage,
-                end_stage=end_stage,
+                pipeline=async_get_pipeline(hass, pipeline_id=run_options.pipeline_id),
+                start_stage=run_options.start_stage,
+                end_stage=run_options.end_stage,
                 event_callback=event_callback,
-                tts_audio_output=tts_audio_output,
-                wake_word_settings=wake_word_settings,
-                audio_settings=audio_settings or AudioSettings(),
+                tts_audio_output=run_options.tts_audio_output,
+                wake_word_settings=run_options.wake_word_settings,
+                audio_settings=run_options.audio_settings or AudioSettings(),
             ),
         )
         await pipeline_input.validate()

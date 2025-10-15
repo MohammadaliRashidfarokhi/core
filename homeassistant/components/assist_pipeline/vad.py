@@ -131,70 +131,72 @@ class VoiceCommandSegmenter:
         self.in_command = False
 
     def process(self, chunk_seconds: float, speech_probability: float | None) -> bool:
-        """Process samples using external VAD.
+        """Process samples using external VAD. Returns False when command is done."""
+        self._clear_timeout_flag()
 
-        Returns False when command is done.
-        """
+        if self._tick_and_timed_out(chunk_seconds):
+            self._on_timeout()
+            return False
+
+        prob = 0.0 if speech_probability is None else speech_probability
+        if not self.in_command:
+            return self._process_before_command(chunk_seconds, prob)
+        return self._process_in_command(chunk_seconds, prob)
+
+    # -------------------- helpers --------------------
+
+    def _clear_timeout_flag(self) -> None:
         if self.timed_out:
             self.timed_out = False
 
+    def _tick_and_timed_out(self, chunk_seconds: float) -> bool:
         self._timeout_seconds_left -= chunk_seconds
-        if self._timeout_seconds_left <= 0:
-            _LOGGER.debug(
-                "VAD end of speech detection timed out after %s seconds",
-                self.timeout_seconds,
-            )
-            self.reset()
-            self.timed_out = True
-            return False
+        return self._timeout_seconds_left <= 0
 
-        if speech_probability is None:
-            speech_probability = 0.0
+    def _on_timeout(self) -> None:
+        _LOGGER.debug(
+            "VAD end of speech detection timed out after %s seconds",
+            self.timeout_seconds,
+        )
+        self.reset()
+        self.timed_out = True
 
-        if not self.in_command:
-            # Before command
-            is_speech = speech_probability > self.before_command_speech_threshold
-            if is_speech:
-                self._reset_seconds_left = self.reset_seconds
-                self._speech_seconds_left -= chunk_seconds
-                if self._speech_seconds_left <= 0:
-                    # Inside voice command
-                    self.in_command = True
-                    self._command_seconds_left = (
-                        self.command_seconds - self.speech_seconds
-                    )
-                    self._silence_seconds_left = self.silence_seconds
-                    _LOGGER.debug("Voice command started")
-            else:
-                # Reset if enough silence
-                self._reset_seconds_left -= chunk_seconds
-                if self._reset_seconds_left <= 0:
-                    self._speech_seconds_left = self.speech_seconds
-                    self._reset_seconds_left = self.reset_seconds
-        else:
-            # In command
-            is_speech = speech_probability > self.in_command_speech_threshold
-            if not is_speech:
-                # Silence in command
-                self._reset_seconds_left = self.reset_seconds
-                self._silence_seconds_left -= chunk_seconds
-                self._command_seconds_left -= chunk_seconds
-                if (self._silence_seconds_left <= 0) and (
-                    self._command_seconds_left <= 0
-                ):
-                    # Command finished successfully
-                    self.reset()
-                    _LOGGER.debug("Voice command finished")
-                    return False
-            else:
-                # Speech in command.
-                # Reset silence counter if enough speech.
-                self._reset_seconds_left -= chunk_seconds
-                self._command_seconds_left -= chunk_seconds
-                if self._reset_seconds_left <= 0:
-                    self._silence_seconds_left = self.silence_seconds
-                    self._reset_seconds_left = self.reset_seconds
+    def _process_before_command(self, chunk_seconds: float, prob: float) -> None:
+        is_speech = prob > self.before_command_speech_threshold
+        if is_speech:
+            self._reset_seconds_left = self.reset_seconds
+            self._speech_seconds_left -= chunk_seconds
+            if self._speech_seconds_left <= 0:
+                self.in_command = True
+                self._command_seconds_left = self.command_seconds - self.speech_seconds
+                self._silence_seconds_left = self.silence_seconds
+                _LOGGER.debug("Voice command started")
+            return
 
+        self._reset_seconds_left -= chunk_seconds
+        if self._reset_seconds_left <= 0:
+            self._speech_seconds_left = self.speech_seconds
+            self._reset_seconds_left = self.reset_seconds
+
+    def _process_in_command(self, chunk_seconds: float, prob: float) -> bool:
+        is_speech = prob > self.in_command_speech_threshold
+        if not is_speech:
+            # Silence while in command
+            self._reset_seconds_left = self.reset_seconds
+            self._silence_seconds_left -= chunk_seconds
+            self._command_seconds_left -= chunk_seconds
+            if (self._silence_seconds_left <= 0) and (self._command_seconds_left <= 0):
+                self.reset()
+                _LOGGER.debug("Voice command finished")
+                return False
+            return True
+
+        # Speech while in command
+        self._reset_seconds_left -= chunk_seconds
+        self._command_seconds_left -= chunk_seconds
+        if self._reset_seconds_left <= 0:
+            self._silence_seconds_left = self.silence_seconds
+            self._reset_seconds_left = self.reset_seconds
         return True
 
     def process_with_vad(
