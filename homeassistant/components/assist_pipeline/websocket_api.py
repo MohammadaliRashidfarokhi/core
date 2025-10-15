@@ -64,64 +64,6 @@ def async_register_websocket_api(hass: HomeAssistant) -> None:
     websocket_api.async_register_command(hass, websocket_device_capture)
 
 
-@websocket_api.websocket_command(
-    vol.All(
-        websocket_api.BASE_COMMAND_MESSAGE_SCHEMA.extend(
-            {
-                vol.Required("type"): "assist_pipeline/run",
-                # pylint: disable-next=unnecessary-lambda
-                vol.Required("start_stage"): lambda val: PipelineStage(val),
-                # pylint: disable-next=unnecessary-lambda
-                vol.Required("end_stage"): lambda val: PipelineStage(val),
-                vol.Optional("input"): dict,
-                vol.Optional("pipeline"): str,
-                vol.Optional("conversation_id"): vol.Any(str, None),
-                vol.Optional("device_id"): vol.Any(str, None),
-                vol.Optional("timeout"): vol.Any(float, int),
-            },
-        ),
-        cv.key_value_schemas(
-            "start_stage",
-            {
-                PipelineStage.WAKE_WORD: vol.Schema(
-                    {
-                        vol.Required("input"): {
-                            vol.Required("sample_rate"): int,
-                            vol.Optional("timeout"): vol.Any(float, int),
-                            vol.Optional("audio_seconds_to_buffer"): vol.Any(
-                                float, int
-                            ),
-                            # Audio enhancement
-                            vol.Optional("noise_suppression_level"): int,
-                            vol.Optional("auto_gain_dbfs"): int,
-                            vol.Optional("volume_multiplier"): float,
-                            # Advanced use cases/testing
-                            vol.Optional("no_vad"): bool,
-                        }
-                    },
-                    extra=vol.ALLOW_EXTRA,
-                ),
-                PipelineStage.STT: vol.Schema(
-                    {
-                        vol.Required("input"): {
-                            vol.Required("sample_rate"): int,
-                            vol.Optional("wake_word_phrase"): str,
-                        }
-                    },
-                    extra=vol.ALLOW_EXTRA,
-                ),
-                PipelineStage.INTENT: vol.Schema(
-                    {vol.Required("input"): {"text": str}},
-                    extra=vol.ALLOW_EXTRA,
-                ),
-                PipelineStage.TTS: vol.Schema(
-                    {vol.Required("input"): {"text": str}},
-                    extra=vol.ALLOW_EXTRA,
-                ),
-            },
-        ),
-    ),
-)
 def _maybe_unregister(unregister_handler: Callable[[], None] | None) -> None:
     if unregister_handler is not None:
         unregister_handler()
@@ -209,7 +151,64 @@ def _prepare_audio_stage(
     )
 
 
-@websocket_api.async_response
+@websocket_api.websocket_command(
+    vol.All(
+        websocket_api.BASE_COMMAND_MESSAGE_SCHEMA.extend(
+            {
+                vol.Required("type"): "assist_pipeline/run",
+                # pylint: disable-next=unnecessary-lambda
+                vol.Required("start_stage"): lambda val: PipelineStage(val),
+                # pylint: disable-next=unnecessary-lambda
+                vol.Required("end_stage"): lambda val: PipelineStage(val),
+                vol.Optional("input"): dict,
+                vol.Optional("pipeline"): str,
+                vol.Optional("conversation_id"): vol.Any(str, None),
+                vol.Optional("device_id"): vol.Any(str, None),
+                vol.Optional("timeout"): vol.Any(float, int),
+            },
+        ),
+        cv.key_value_schemas(
+            "start_stage",
+            {
+                PipelineStage.WAKE_WORD: vol.Schema(
+                    {
+                        vol.Required("input"): {
+                            vol.Required("sample_rate"): int,
+                            vol.Optional("timeout"): vol.Any(float, int),
+                            vol.Optional("audio_seconds_to_buffer"): vol.Any(
+                                float, int
+                            ),
+                            # Audio enhancement
+                            vol.Optional("noise_suppression_level"): int,
+                            vol.Optional("auto_gain_dbfs"): int,
+                            vol.Optional("volume_multiplier"): float,
+                            # Advanced use cases/testing
+                            vol.Optional("no_vad"): bool,
+                        }
+                    },
+                    extra=vol.ALLOW_EXTRA,
+                ),
+                PipelineStage.STT: vol.Schema(
+                    {
+                        vol.Required("input"): {
+                            vol.Required("sample_rate"): int,
+                            vol.Optional("wake_word_phrase"): str,
+                        }
+                    },
+                    extra=vol.ALLOW_EXTRA,
+                ),
+                PipelineStage.INTENT: vol.Schema(
+                    {vol.Required("input"): {"text": str}},
+                    extra=vol.ALLOW_EXTRA,
+                ),
+                PipelineStage.TTS: vol.Schema(
+                    {vol.Required("input"): {"text": str}},
+                    extra=vol.ALLOW_EXTRA,
+                ),
+            },
+        ),
+    ),
+)
 async def websocket_run(
     hass: HomeAssistant,
     connection: websocket_api.ActiveConnection,
