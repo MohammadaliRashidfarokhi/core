@@ -161,7 +161,8 @@ class VoiceCommandSegmenter:
         self.reset()
         self.timed_out = True
 
-    def _process_before_command(self, chunk_seconds: float, prob: float) -> None:
+    def _process_before_command(self, chunk_seconds: float, prob: float) -> bool:
+        """Handle VAD while not yet in a command. Always returns True (not finished)."""
         is_speech = prob > self.before_command_speech_threshold
         if is_speech:
             self._reset_seconds_left = self.reset_seconds
@@ -171,12 +172,13 @@ class VoiceCommandSegmenter:
                 self._command_seconds_left = self.command_seconds - self.speech_seconds
                 self._silence_seconds_left = self.silence_seconds
                 _LOGGER.debug("Voice command started")
-            return
+            return True
 
         self._reset_seconds_left -= chunk_seconds
         if self._reset_seconds_left <= 0:
             self._speech_seconds_left = self.speech_seconds
             self._reset_seconds_left = self.reset_seconds
+        return True
 
     def _process_in_command(self, chunk_seconds: float, prob: float) -> bool:
         is_speech = prob > self.in_command_speech_threshold

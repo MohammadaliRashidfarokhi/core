@@ -8,7 +8,6 @@ from collections import defaultdict, deque
 from collections.abc import AsyncGenerator, AsyncIterable, Callable
 from dataclasses import asdict, dataclass, field
 from enum import StrEnum
-import functools
 import logging
 import math
 from pathlib import Path
@@ -365,8 +364,7 @@ class PipelineUpdateTD(TypedDict, total=False):
 async def async_update_pipeline(
     hass: HomeAssistant,
     pipeline: Pipeline,
-    *,
-    update: PipelineUpdateTD,
+    **patch: PipelineUpdateTD,
 ) -> None:
     """Update an existing Assist pipeline with the provided data."""
     pipeline_data = hass.data[KEY_ASSIST_PIPELINE]
@@ -374,7 +372,7 @@ async def async_update_pipeline(
     updates: dict[str, Any] = pipeline.to_json()
     updates.pop("id", None)
 
-    updates.update({k: v for k, v in update.items() if v is not UNDEFINED})
+    updates.update({k: v for k, v in patch.items() if v is not UNDEFINED})
 
     await pipeline_data.pipeline_store.async_update_item(pipeline.id, updates)
 
@@ -920,10 +918,19 @@ class PipelineRun:
 
         metadata.language = self.pipeline.stt_language or self.language
 
-        # Offload potentially-blocking sync check to the executor
-        is_supported = await self.hass.async_add_executor_job(
-            stt_provider.check_metadata, metadata
-        )
+        # Call check_metadata on the HA loop, not from an executor
+        check = getattr(stt_provider, "check_metadata", None)
+        if check is None:
+            raise SpeechToTextError(
+                code="stt-provider-unsupported-metadata",
+                message=f"Provider {stt_provider.name} has no metadata checker",
+            )
+
+        if asyncio.iscoroutinefunction(check):
+            is_supported = await check(metadata)
+        else:
+            is_supported = check(metadata)
+
         if not is_supported:
             raise SpeechToTextError(
                 code="stt-provider-unsupported-metadata",
@@ -943,10 +950,9 @@ class PipelineRun:
         """Run speech-to-text portion of pipeline. Returns the spoken text."""
         # Create a background task to prepare the conversation agent
         if self.end_stage >= PipelineStage.INTENT and self.intent_agent:
+            lang = self.language or self.pipeline.language or self.hass.config.language
             self.hass.async_create_background_task(
-                conversation.async_prepare_agent(
-                    self.hass, self.intent_agent.id, self.language
-                ),
+                conversation.async_prepare_agent(self.hass, self.intent_agent.id, lang),
                 f"prepare conversation agent {self.intent_agent.id}",
             )
 
@@ -1566,23 +1572,23 @@ class PipelineRun:
                 tts_options[tts.ATTR_PREFERRED_SAMPLE_BYTES] = SAMPLE_WIDTH
 
         try:
-            # Offload potentially blocking creation to executor and await it
-            create_stream_partial = functools.partial(
-                tts.async_create_stream,
+            # Call directly on HA's event loop (NOT in an executor)
+            self.tts_stream = tts.async_create_stream(
                 hass=self.hass,
                 engine=engine,
                 language=self.pipeline.tts_language,
                 options=tts_options,
             )
-            self.tts_stream = await self.hass.async_add_executor_job(
-                create_stream_partial
-            )
+
+            await asyncio.sleep(0)
+
         except HomeAssistantError as err:
             raise TextToSpeechError(
                 code="tts-not-supported",
                 message=(
                     f"Text-to-speech engine {engine} "
-                    f"does not support language {self.pipeline.tts_language} or options {tts_options}: {err}"
+                    f"does not support language {self.pipeline.tts_language} "
+                    f"or options {tts_options}: {err}"
                 ),
             ) from err
 
@@ -1590,6 +1596,22 @@ class PipelineRun:
         self, tts_input: str, override_media_path: Path | None = None
     ) -> None:
         """Run text-to-speech portion of the pipeline."""
+        assert self.tts_stream is not None
+
+        self.process_event(
+            PipelineEvent(
+                PipelineEventType.TTS_START,
+                {
+                    "engine": self.tts_stream.engine,
+                    "language": self.pipeline.tts_language,
+                    "voice": self.pipeline.tts_voice,
+                    "tts_input": tts_input,
+                    "acknowledge_override": override_media_path is not None,
+                },
+            )
+        )
+        # ------------------------------------------------
+
         if override_media_path:
             self.tts_stream.async_override_result(override_media_path)
         elif not self._streamed_response_text:
