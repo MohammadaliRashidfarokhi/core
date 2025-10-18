@@ -1447,7 +1447,9 @@ class AlexaModeController(AlexaCapability):
             f"{valve.DOMAIN}.state": self._get_valve_position_state,
         }
 
-        handler = instance_handlers.get(self.instance)
+        handler = None
+        if self.instance is not None:
+            handler = instance_handlers.get(self.instance)
         if handler:
             return handler()
         return None
@@ -1467,7 +1469,9 @@ class AlexaModeController(AlexaCapability):
 
     def _get_humidifier_mode(self) -> str | None:
         mode = self.entity.attributes.get(humidifier.ATTR_MODE)
-        modes: list[str] = self.entity.attributes.get(humidifier.ATTR_AVAILABLE_MODES) or []
+        modes: list[str] = (
+            self.entity.attributes.get(humidifier.ATTR_AVAILABLE_MODES) or []
+        )
         if mode in modes:
             return f"{humidifier.ATTR_MODE}.{mode}"
         return None
@@ -1481,7 +1485,9 @@ class AlexaModeController(AlexaCapability):
 
     def _get_water_heater_operation_mode(self) -> str | None:
         operation_mode = self.entity.attributes.get(water_heater.ATTR_OPERATION_MODE)
-        operation_modes: list[str] = self.entity.attributes.get(water_heater.ATTR_OPERATION_LIST) or []
+        operation_modes: list[str] = (
+            self.entity.attributes.get(water_heater.ATTR_OPERATION_LIST) or []
+        )
         if operation_mode in operation_modes:
             return f"{water_heater.ATTR_OPERATION_MODE}.{operation_mode}"
         return None
@@ -1550,9 +1556,7 @@ class AlexaModeController(AlexaCapability):
         return self._resource.serialize_capability_resources()
 
     def _fan_preset_mode_resource(self) -> dict[str, list[dict[str, Any]]]:
-        self._resource = AlexaModeResource(
-            [AlexaGlobalCatalog.SETTING_PRESET], False
-        )
+        self._resource = AlexaModeResource([AlexaGlobalCatalog.SETTING_PRESET], False)
         preset_modes = self.entity.attributes.get(fan.ATTR_PRESET_MODES) or []
         for preset_mode in preset_modes:
             self._resource.add_mode(
@@ -1596,9 +1600,7 @@ class AlexaModeController(AlexaCapability):
         self._resource = AlexaModeResource([AlexaGlobalCatalog.SETTING_MODE], False)
         activities = self.entity.attributes.get(remote.ATTR_ACTIVITY_LIST) or []
         for activity in activities:
-            self._resource.add_mode(
-                f"{remote.ATTR_ACTIVITY}.{activity}", [activity]
-            )
+            self._resource.add_mode(f"{remote.ATTR_ACTIVITY}.{activity}", [activity])
         if len(activities) == 1:
             self._resource.add_mode(
                 f"{remote.ATTR_ACTIVITY}.{PRESET_MODE_NA}", [PRESET_MODE_NA]
@@ -1792,7 +1794,9 @@ class AlexaRangeController(AlexaCapability):
             f"{valve.DOMAIN}.{valve.ATTR_POSITION}": self._get_valve_position,
         }
 
-        handler = handler_map.get(self.instance)
+        handler = None
+        if self.instance is not None:
+            handler = handler_map.get(self.instance)
         if handler:
             return handler()
         return None
@@ -1847,7 +1851,9 @@ class AlexaRangeController(AlexaCapability):
             f"{vacuum.DOMAIN}.{vacuum.ATTR_FAN_SPEED}": self._vacuum_fan_speed_resource,
             f"{valve.DOMAIN}.{valve.ATTR_POSITION}": self._valve_position_resource,
         }
-        resource_func = instance_map.get(self.instance)
+        resource_func = None
+        if self.instance is not None:
+            resource_func = instance_map.get(self.instance)
         if resource_func:
             return resource_func()
         return {}
