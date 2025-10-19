@@ -1,0 +1,29 @@
+============================= test session starts ==============================
+platform darwin -- Python 3.13.7, pytest-8.4.2, pluggy-1.6.0
+rootdir: /Users/pradipgotame/Documents/evolutionassignment/core
+configfile: pyproject.toml
+plugins: respx-0.22.0, pytest_freezer-0.4.9, unordered-0.7.0, asyncio-1.2.0, syrupy-4.9.1, sugar-1.0.0, socket-0.7.0, xdist-3.8.0, timeout-2.4.0, anyio-4.10.0, github-actions-annotate-failures-0.3.0, pyfakefs-5.9.3, aiohttp-1.1.0, picked-0.5.1, requests-mock-1.12.1, cov-7.0.0
+asyncio: mode=Mode.AUTO, debug=True, asyncio_default_fixture_loop_scope=function, asyncio_default_test_loop_scope=function
+collected 13 items
+
+tests/components/buienradar/test_camera.py .......                       [ 53%]
+tests/components/buienradar/test_config_flow.py ...                      [ 76%]
+tests/components/buienradar/test_init.py .                               [ 84%]
+tests/components/buienradar/test_sensor.py .                             [ 92%]
+tests/components/buienradar/test_weather.py .                            [100%]
+
+================================ tests coverage ================================
+_______________ coverage: platform darwin, python 3.13.7-final-0 _______________
+
+Name                                                 Stmts   Miss  Cover
+------------------------------------------------------------------------
+homeassistant/components/buienradar/__init__.py         22      1    95%
+homeassistant/components/buienradar/camera.py           81      3    96%
+homeassistant/components/buienradar/config_flow.py      32      0   100%
+homeassistant/components/buienradar/const.py            16      0   100%
+homeassistant/components/buienradar/sensor.py          160    106    34%
+homeassistant/components/buienradar/util.py            151     64    58%
+homeassistant/components/buienradar/weather.py          75     31    59%
+------------------------------------------------------------------------
+TOTAL                                                  537    205    62%
+============================== 13 passed in 1.71s ==============================
