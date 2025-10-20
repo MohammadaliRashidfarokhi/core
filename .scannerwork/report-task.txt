@@ -1,0 +1,6 @@
+projectKey=HomeAssignmentCore
+serverUrl=http://localhost:9000
+serverVersion=25.10.0.114319
+dashboardUrl=http://localhost:9000/dashboard?id=HomeAssignmentCore
+ceTaskId=52ef669f-c482-4dc9-9e12-832a40da7092
+ceTaskUrl=http://localhost:9000/api/ce/task?id=52ef669f-c482-4dc9-9e12-832a40da7092
