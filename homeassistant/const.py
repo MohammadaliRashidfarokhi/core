@@ -313,6 +313,13 @@ STATE_UNAVAILABLE: Final = "unavailable"
 STATE_OK: Final = "ok"
 STATE_PROBLEM: Final = "problem"
 
+#buiredar constant 
+SENSOR_MDI_GAUGE = "mdi:gauge"
+SENSOR_WEATHER_WINDY = "mdi:weather-windy"
+SENSOR_COMAPASS_OUTLINE = "mdi:compass-outline"
+WEATHER_POURING_OUTLINE = "mdi:weather-pouring"
+WEATHER_PARTLY_CLOUDY_OUTLINE = "mdi:weather-partly-cloudy"
+
 
 # #### STATE AND EVENT ATTRIBUTES ####
 # Attribution

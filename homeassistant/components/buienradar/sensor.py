@@ -35,6 +35,11 @@ from homeassistant.const import (
     CONF_NAME,
     DEGREE,
     PERCENTAGE,
+    SENSOR_MDI_GAUGE,
+    SENSOR_WEATHER_WINDY,
+    SENSOR_COMAPASS_OUTLINE,
+    WEATHER_POURING_OUTLINE,
+    WEATHER_PARTLY_CLOUDY_OUTLINE,
     Platform,
     UnitOfIrradiance,
     UnitOfLength,
@@ -72,12 +77,6 @@ SCHEDULE_OK = 10
 SCHEDULE_NOK = 2
 
 STATIONNAME_LABEL = "Stationname"
-
-SENSOR_MDI_GAUGE = "mdi:gauge"
-SENSOR_WEATHER_WINDY = "mdi:weather-windy"
-SENSOR_COMAPASS_OUTLINE = "mdi:compass-outline"
-WEATHER_POURING_OUTLINE = "mdi:weather-pouring"
-WEATHER_PARTLY_CLOUDY_OUTLINE = "mdi:weather-partly-cloudy"
 
 SENSOR_TYPES: tuple[SensorEntityDescription, ...] = (
     SensorEntityDescription(
@@ -874,7 +873,8 @@ class BrSensor(SensorEntity):
     def _load_forecast_windspeed_data(self, data, sensor_type, fcday):
         """Load forecast windspeed data and convert to km/h."""
         try:
-            self._attr_native_value = data.get(FORECAST)[fcday].get(sensor_type[:-3])
+            # Fix: slice 2 chars to remove "_1", "_2", etc.
+            self._attr_native_value = data.get(FORECAST)[fcday].get(sensor_type[:-2])
         except IndexError:
             _LOGGER.warning(NO_FORECAST_MSG, fcday)
             return False

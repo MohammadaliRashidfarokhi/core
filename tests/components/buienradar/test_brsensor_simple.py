@@ -1,3 +1,4 @@
+import logging
 from datetime import datetime
 from unittest.mock import MagicMock
 
@@ -26,6 +27,8 @@ ATTR_ATTRIBUTION = "attribution"
 ATTRIBUTION = "Buienradar"
 TIMEFRAME = "Timeframe"
 
+_LOGGER = logging.getLogger(__name__)
+NO_FORECAST_MSG = "No forecast for fcday=%s"
 
 class TestConstantsAreImportable:
     """Test that constants can be imported and used."""
@@ -239,6 +242,37 @@ class TestLoadPrecipitationForecastData:
         assert result is True
         assert self.sensor._timeframe == 120
         assert self.sensor._attr_native_value == 10.0
+    
+    def test_load_forecast_condition_data_all_branches(self, caplog):
+        """Test _load_forecast_condition_data handles all scenarios correctly."""
+
+        coords = {CONF_LATITUDE: 52.0, CONF_LONGITUDE: 5.0}
+        desc = SensorEntityDescription(key="condition")
+        sensor = BrSensor("Test", coords, desc)
+
+        # --- Case 1: Normal forecast data (new state + new image) ---
+        forecast_data = {
+            FORECAST: [
+                {CONDITION: {CONDITION: "sunny", IMAGE: "sunny.png"}},
+                {CONDITION: {CONDITION: "cloudy", IMAGE: "cloudy.png"}},
+            ]
+        }
+        result = sensor._load_forecast_condition_data(forecast_data, "condition", 0)
+        assert result is True
+        assert sensor._attr_native_value == "sunny"
+        assert sensor._attr_entity_picture == "sunny.png"
+
+        # --- Case 2: Condition unchanged (should return False) ---
+        result = sensor._load_forecast_condition_data(forecast_data, "condition", 0)
+        assert result is False
+
+        # --- Case 3: Missing forecast index (IndexError branch) ---
+        caplog.clear()
+        result = sensor._load_forecast_condition_data(forecast_data, "condition", 10)
+        assert result is False
+
+        # just ensure at least one warning log exists
+        assert any(rec.levelname == "WARNING" for rec in caplog.records)
 
 
 class TestLoadDefaultData:
@@ -549,3 +583,30 @@ class TestSetPrecipitationAttributes:
             ATTR_ATTRIBUTION: ATTRIBUTION,
             TIMEFRAME: "10 min",
         }
+
+    def test_set_precipitation_attributes_behavior(self):
+        """Test internal _set_precipitation_attributes method for BrSensor."""
+
+        # Arrange: create sensor instance same way as in other tests
+        coords = {CONF_LATITUDE: 52.0, CONF_LONGITUDE: 5.0}
+        desc = SensorEntityDescription(key="precipitation")
+        sensor = BrSensor("Test", coords, desc)
+
+        # Case 1: No timeframe
+        data = {ATTR_ATTRIBUTION: "Buienradar Attribution"}
+        sensor._timeframe = None
+        sensor._set_precipitation_attributes(data)
+
+        assert sensor._attr_extra_state_attributes == {
+            ATTR_ATTRIBUTION: "Buienradar Attribution"
+        }
+
+        # Case 2: With timeframe
+        sensor._timeframe = 20
+        sensor._set_precipitation_attributes(data)
+
+        expected = {
+            ATTR_ATTRIBUTION: "Buienradar Attribution",
+            TIMEFRAME: "20 min",
+        }
+        assert sensor._attr_extra_state_attributes == expected

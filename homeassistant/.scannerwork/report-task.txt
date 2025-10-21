@@ -2,5 +2,5 @@ projectKey=homeassistantassignment
 serverUrl=http://localhost:9000
 serverVersion=25.10.0.114319
 dashboardUrl=http://localhost:9000/dashboard?id=homeassistantassignment
-ceTaskId=c45fc2fe-76f3-46dd-919a-05cf4149e0a9
-ceTaskUrl=http://localhost:9000/api/ce/task?id=c45fc2fe-76f3-46dd-919a-05cf4149e0a9
+ceTaskId=55405232-73ea-4cd7-8167-864edaeaa6cd
+ceTaskUrl=http://localhost:9000/api/ce/task?id=55405232-73ea-4cd7-8167-864edaeaa6cd
