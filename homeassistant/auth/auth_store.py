@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from datetime import timedelta
 import hmac
 import itertools
@@ -66,18 +67,22 @@ class AuthStore:
 
     async def async_get_groups(self) -> list[models.Group]:
         """Retrieve all users."""
+        await self._async_touch()
         return list(self._groups.values())
 
     async def async_get_group(self, group_id: str) -> models.Group | None:
         """Retrieve all users."""
+        await self._async_touch()
         return self._groups.get(group_id)
 
     async def async_get_users(self) -> list[models.User]:
         """Retrieve all users."""
+        await self._async_touch()
         return list(self._users.values())
 
     async def async_get_user(self, user_id: str) -> models.User | None:
         """Retrieve a user by id."""
+        await self._async_touch()
         return self._users.get(user_id)
 
     async def async_create_user(
@@ -138,8 +143,8 @@ class AuthStore:
     ) -> None:
         """Add credentials to an existing user."""
         user.credentials.append(credentials)
-        self._async_schedule_save()
         credentials.is_new = False
+        await self._async_mark_dirty()
 
     async def async_remove_user(self, user: models.User) -> None:
         """Remove a user."""
@@ -147,7 +152,7 @@ class AuthStore:
         for refresh_token_id in user.refresh_tokens:
             del self._token_id_to_user_id[refresh_token_id]
         user.refresh_tokens.clear()
-        self._async_schedule_save()
+        await self._async_mark_dirty()
 
     async def async_update_user(
         self,
@@ -175,17 +180,17 @@ class AuthStore:
             if value is not None:
                 setattr(user, attr_name, value)
 
-        self._async_schedule_save()
+        await self._async_mark_dirty()
 
     async def async_activate_user(self, user: models.User) -> None:
         """Activate a user."""
         user.is_active = True
-        self._async_schedule_save()
+        await self._async_mark_dirty()
 
     async def async_deactivate_user(self, user: models.User) -> None:
         """Activate a user."""
         user.is_active = False
-        self._async_schedule_save()
+        await self._async_mark_dirty()
 
     async def async_remove_credentials(self, credentials: models.Credentials) -> None:
         """Remove credentials."""
@@ -201,7 +206,7 @@ class AuthStore:
                 user.credentials.pop(found)
                 break
 
-        self._async_schedule_save()
+        await self._async_mark_dirty()
 
     async def async_create_refresh_token(
         self,
@@ -233,7 +238,7 @@ class AuthStore:
         user.refresh_tokens[token_id] = refresh_token
         self._token_id_to_user_id[token_id] = user.id
 
-        self._async_schedule_save()
+        await self._async_mark_dirty()
         return refresh_token
 
     @callback
@@ -654,6 +659,15 @@ class AuthStore:
         groups[read_only_group.id] = read_only_group
         self._groups = groups
         self._build_token_id_to_user_id()
+
+    async def _async_touch(self) -> None:
+        """Yield to the loop so async callers can await a real coroutine."""
+        await asyncio.sleep(0)
+
+    async def _async_mark_dirty(self) -> None:
+        """Schedule save and yield once to keep async contract."""
+        self._async_schedule_save()
+        await asyncio.sleep(0)
 
 
 def _system_admin_group() -> models.Group:

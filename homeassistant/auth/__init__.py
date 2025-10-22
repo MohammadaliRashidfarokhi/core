@@ -201,7 +201,7 @@ class AuthManager:
                 self._async_cancel_expiration_schedule, job_type=HassJobType.Callback
             )
         )
-        self._async_track_next_refresh_token_expiration()
+        await self._async_track_next_refresh_token_expiration()
 
     @property
     def auth_providers(self) -> list[AuthProvider]:
