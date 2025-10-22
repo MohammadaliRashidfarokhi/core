@@ -209,6 +209,7 @@ def _prepare_audio_stage(
         ),
     ),
 )
+@websocket_api.async_response
 async def websocket_run(
     hass: HomeAssistant,
     connection: websocket_api.ActiveConnection,
@@ -247,7 +248,7 @@ async def websocket_run(
             unregister_handler,
             wake_word_settings,
             audio_settings,
-        ) = await _prepare_audio_stage(connection, msg, pipeline)
+        ) = _prepare_audio_stage(connection, msg, pipeline)
         input_args.update(input_overrides)
 
     elif start_stage == PipelineStage.INTENT:
