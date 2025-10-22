@@ -59,6 +59,26 @@ class CommandLineAuthProvider(AuthProvider):
         super().__init__(*args, **kwargs)
         self._user_meta: dict[str, dict[str, Any]] = {}
 
+    def _parse_meta(self, stdout: bytes, username: str) -> None:
+        """Parse metadata lines from stdout and store allowed keys for the user."""
+        if not self.config[CONF_META] or stdout is None:
+            return
+        meta: dict[str, str] = {}
+        for _line in stdout.splitlines():
+            try:
+                line = _line.decode().lstrip()
+            except ValueError:
+                # malformed line
+                continue
+            if line.startswith("#") or "=" not in line:
+                continue
+            key, _, value = line.partition("=")
+            key = key.strip()
+            value = value.strip()
+            if key in self.ALLOWED_META_KEYS:
+                meta[key] = value
+        self._user_meta[username] = meta
+
     async def async_login_flow(
         self, context: AuthFlowContext | None
     ) -> CommandLineLoginFlow:
@@ -91,21 +111,7 @@ class CommandLineAuthProvider(AuthProvider):
             raise InvalidAuthError
 
         if self.config[CONF_META]:
-            meta: dict[str, str] = {}
-            for _line in stdout.splitlines():
-                try:
-                    line = _line.decode().lstrip()
-                except ValueError:
-                    # malformed line
-                    continue
-                if line.startswith("#") or "=" not in line:
-                    continue
-                key, _, value = line.partition("=")
-                key = key.strip()
-                value = value.strip()
-                if key in self.ALLOWED_META_KEYS:
-                    meta[key] = value
-            self._user_meta[username] = meta
+            self._parse_meta(stdout, username)
 
     async def async_get_or_create_credentials(
         self, flow_result: Mapping[str, str]

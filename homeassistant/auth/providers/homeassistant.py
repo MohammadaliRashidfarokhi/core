@@ -6,6 +6,7 @@ import asyncio
 import base64
 from collections.abc import Mapping
 import logging
+import os
 from typing import Any, cast
 
 import bcrypt
@@ -163,7 +164,7 @@ class Data:
         Raises InvalidAuth if auth invalid.
         """
         username = self.normalize_username(username)
-        dummy = b"$2b$12$CiuFGszHx9eNHxPuQcwBWez4CwDTOcLTX5CbOpV6gef2nYuXkY7BO"
+        _DUMMY_HASH: bytes = bcrypt.hashpw(os.urandom(16), bcrypt.gensalt(rounds=12))
         found = None
 
         # Compare all users to avoid timing attacks.
@@ -173,7 +174,7 @@ class Data:
 
         if found is None:
             # check a hash to make timing the same as if user was found
-            bcrypt.checkpw(b"foo", dummy)
+            bcrypt.checkpw(os.urandom(16), _DUMMY_HASH)
             raise InvalidAuth
 
         user_hash = base64.b64decode(found["password"])
