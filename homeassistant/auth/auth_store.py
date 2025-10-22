@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from datetime import timedelta
 import hmac
 import itertools
@@ -66,18 +67,22 @@ class AuthStore:
 
     async def async_get_groups(self) -> list[models.Group]:
         """Retrieve all users."""
+        await self._async_touch()
         return list(self._groups.values())
 
     async def async_get_group(self, group_id: str) -> models.Group | None:
         """Retrieve all users."""
+        await self._async_touch()
         return self._groups.get(group_id)
 
     async def async_get_users(self) -> list[models.User]:
         """Retrieve all users."""
+        await self._async_touch()
         return list(self._users.values())
 
     async def async_get_user(self, user_id: str) -> models.User | None:
         """Retrieve a user by id."""
+        await self._async_touch()
         return self._users.get(user_id)
 
     async def async_create_user(
@@ -138,8 +143,8 @@ class AuthStore:
     ) -> None:
         """Add credentials to an existing user."""
         user.credentials.append(credentials)
-        self._async_schedule_save()
         credentials.is_new = False
+        await self._async_mark_dirty()
 
     async def async_remove_user(self, user: models.User) -> None:
         """Remove a user."""
@@ -147,7 +152,7 @@ class AuthStore:
         for refresh_token_id in user.refresh_tokens:
             del self._token_id_to_user_id[refresh_token_id]
         user.refresh_tokens.clear()
-        self._async_schedule_save()
+        await self._async_mark_dirty()
 
     async def async_update_user(
         self,
@@ -175,17 +180,17 @@ class AuthStore:
             if value is not None:
                 setattr(user, attr_name, value)
 
-        self._async_schedule_save()
+        await self._async_mark_dirty()
 
     async def async_activate_user(self, user: models.User) -> None:
         """Activate a user."""
         user.is_active = True
-        self._async_schedule_save()
+        await self._async_mark_dirty()
 
     async def async_deactivate_user(self, user: models.User) -> None:
         """Activate a user."""
         user.is_active = False
-        self._async_schedule_save()
+        await self._async_mark_dirty()
 
     async def async_remove_credentials(self, credentials: models.Credentials) -> None:
         """Remove credentials."""
@@ -201,7 +206,7 @@ class AuthStore:
                 user.credentials.pop(found)
                 break
 
-        self._async_schedule_save()
+        await self._async_mark_dirty()
 
     async def async_create_refresh_token(
         self,
@@ -233,7 +238,7 @@ class AuthStore:
         user.refresh_tokens[token_id] = refresh_token
         self._token_id_to_user_id[token_id] = user.id
 
-        self._async_schedule_save()
+        await self._async_mark_dirty()
         return refresh_token
 
     @callback
@@ -317,6 +322,7 @@ class AuthStore:
             raise RuntimeError("Auth storage is already loaded")
         self._loaded = True
 
+        # Registries + disk load
         dev_reg = dr.async_get(self.hass)
         ent_reg = er.async_get(self.hass)
         data = await self._store.async_load()
@@ -328,55 +334,80 @@ class AuthStore:
             self._set_defaults()
             return
 
-        users: dict[str, models.User] = {}
-        groups: dict[str, models.Group] = {}
-        credentials: dict[str, models.Credentials] = {}
+        # Groups (and migration flags)
+        (
+            groups,
+            has_admin_group,
+            has_user_group,
+            has_read_only_group,
+            group_without_policy,
+        ) = self._load_groups(data)
 
-        # Soft-migrating data as we load. We are going to make sure we have a
-        # read only group and an admin group. There are two states that we can
-        # migrate from:
-        # 1. Data from a recent version which has a single group without policy
-        # 2. Data from old version which has no groups
+        # Migration decisions
+        migrate_users_to_admin_group = not groups and group_without_policy is None
+        if groups and group_without_policy is not None:
+            group_without_policy = None
+
+        # Ensure system groups exist
+        self._ensure_system_groups(
+            groups, has_admin_group, has_user_group, has_read_only_group
+        )
+
+        # Users
+        users = self._load_users(
+            data,
+            groups,
+            migrate_users_to_admin_group,
+            group_without_policy,
+            perm_lookup,
+        )
+
+        # Credentials
+        credentials = self._load_credentials(data, users)
+
+        # Refresh tokens
+        self._load_refresh_tokens(data, users, credentials)
+
+        # Finalize
+        self._groups = groups
+        self._users = users
+        self._build_token_id_to_user_id()
+        self._async_schedule_save(INITIAL_LOAD_SAVE_DELAY)
+
+    @staticmethod
+    def _load_groups(
+        data: dict[str, Any],
+    ) -> tuple[dict[str, models.Group], bool, bool, bool, str | None]:
+        groups: dict[str, models.Group] = {}
         has_admin_group = False
         has_user_group = False
         has_read_only_group = False
-        group_without_policy = None
-
-        # When creating objects we mention each attribute explicitly. This
-        # prevents crashing if user rolls back HA version after a new property
-        # was added.
+        group_without_policy: str | None = None
 
         for group_dict in data.get("groups", []):
             policy: PolicyType | None = None
 
             if group_dict["id"] == GROUP_ID_ADMIN:
                 has_admin_group = True
-
                 name = GROUP_NAME_ADMIN
                 policy = system_policies.ADMIN_POLICY
                 system_generated = True
-
             elif group_dict["id"] == GROUP_ID_USER:
                 has_user_group = True
-
                 name = GROUP_NAME_USER
                 policy = system_policies.USER_POLICY
                 system_generated = True
-
             elif group_dict["id"] == GROUP_ID_READ_ONLY:
                 has_read_only_group = True
-
                 name = GROUP_NAME_READ_ONLY
                 policy = system_policies.READ_ONLY_POLICY
                 system_generated = True
-
             else:
                 name = group_dict["name"]
                 policy = group_dict.get("policy")
                 system_generated = False
 
-            # We don't want groups without a policy that are not system groups
-            # This is part of migrating from state 1
+            # Ignore non-system groups without policy (migration)
             if policy is None:
                 group_without_policy = group_dict["id"]
                 continue
@@ -388,41 +419,51 @@ class AuthStore:
                 system_generated=system_generated,
             )
 
-        # If there are no groups, add all existing users to the admin group.
-        # This is part of migrating from state 2
-        migrate_users_to_admin_group = not groups and group_without_policy is None
+        return (
+            groups,
+            has_admin_group,
+            has_user_group,
+            has_read_only_group,
+            group_without_policy,
+        )
 
-        # If we find a no_policy_group, we need to migrate all users to the
-        # admin group. We only do this if there are no other groups, as is
-        # the expected state. If not expected state, not marking people admin.
-        # This is part of migrating from state 1
-        if groups and group_without_policy is not None:
-            group_without_policy = None
-
-        # This is part of migrating from state 1 and 2
+    @staticmethod
+    def _ensure_system_groups(
+        groups: dict[str, models.Group],
+        has_admin_group: bool,
+        has_user_group: bool,
+        has_read_only_group: bool,
+    ) -> None:
+        # Ensure mandatory system groups exist (migration)
         if not has_admin_group:
             admin_group = _system_admin_group()
             groups[admin_group.id] = admin_group
-
-        # This is part of migrating from state 1 and 2
         if not has_read_only_group:
             read_only_group = _system_read_only_group()
             groups[read_only_group.id] = read_only_group
-
         if not has_user_group:
             user_group = _system_user_group()
             groups[user_group.id] = user_group
 
+    @staticmethod
+    def _load_users(
+        data: dict[str, Any],
+        groups: dict[str, models.Group],
+        migrate_users_to_admin_group: bool,
+        group_without_policy: str | None,
+        perm_lookup: PermissionLookup,
+    ) -> dict[str, models.User]:
+        users: dict[str, models.User] = {}
         for user_dict in data["users"]:
-            # Collect the users group.
-            user_groups = []
+            user_groups: list[models.Group] = []
+
             for group_id in user_dict.get("group_ids", []):
-                # This is part of migrating from state 1
+                # Migrate users out of a no-policy group into admin
                 if group_id == group_without_policy:
                     group_id = GROUP_ID_ADMIN
                 user_groups.append(groups[group_id])
 
-            # This is part of migrating from state 2
+            # If no groups exist previously, migrate non-system users to admin
             if not user_dict["system_generated"] and migrate_users_to_admin_group:
                 user_groups.append(groups[GROUP_ID_ADMIN])
 
@@ -437,7 +478,13 @@ class AuthStore:
                 # New in 2021.11
                 local_only=user_dict.get("local_only", False),
             )
+        return users
 
+    @staticmethod
+    def _load_credentials(
+        data: dict[str, Any], users: dict[str, models.User]
+    ) -> dict[str, models.Credentials]:
+        credentials: dict[str, models.Credentials] = {}
         for cred_dict in data["credentials"]:
             credential = models.Credentials(
                 id=cred_dict["id"],
@@ -448,9 +495,16 @@ class AuthStore:
             )
             credentials[cred_dict["id"]] = credential
             users[cred_dict["user_id"]].credentials.append(credential)
+        return credentials
 
+    @staticmethod
+    def _load_refresh_tokens(
+        data: dict[str, Any],
+        users: dict[str, models.User],
+        credentials: dict[str, models.Credentials],
+    ) -> None:
         for rt_dict in data["refresh_tokens"]:
-            # Filter out the old keys that don't have jwt_key (pre-0.76)
+            # Filter pre-0.76 tokens lacking jwt_key
             if "jwt_key" not in rt_dict:
                 continue
 
@@ -465,17 +519,19 @@ class AuthStore:
                 )
                 continue
 
-            if (token_type := rt_dict.get("token_type")) is None:
-                if rt_dict["client_id"] is None:
-                    token_type = models.TOKEN_TYPE_SYSTEM
-                else:
-                    token_type = models.TOKEN_TYPE_NORMAL
+            token_type = rt_dict.get("token_type")
+            if token_type is None:
+                token_type = (
+                    models.TOKEN_TYPE_SYSTEM
+                    if rt_dict["client_id"] is None
+                    else models.TOKEN_TYPE_NORMAL
+                )
 
-            # old refresh_token don't have last_used_at (pre-0.78)
-            if last_used_at_str := rt_dict.get("last_used_at"):
-                last_used_at = dt_util.parse_datetime(last_used_at_str)
-            else:
-                last_used_at = None
+            # pre-0.78 tokens may lack last_used_at
+            last_used_at_str = rt_dict.get("last_used_at")
+            last_used_at = (
+                dt_util.parse_datetime(last_used_at_str) if last_used_at_str else None
+            )
 
             token = models.RefreshToken(
                 id=rt_dict["id"],
@@ -499,11 +555,6 @@ class AuthStore:
             if "credential_id" in rt_dict:
                 token.credential = credentials.get(rt_dict["credential_id"])
             users[rt_dict["user_id"]].refresh_tokens[token.id] = token
-
-        self._groups = groups
-        self._users = users
-        self._build_token_id_to_user_id()
-        self._async_schedule_save(INITIAL_LOAD_SAVE_DELAY)
 
     @callback
     def _build_token_id_to_user_id(self) -> None:
@@ -608,6 +659,15 @@ class AuthStore:
         groups[read_only_group.id] = read_only_group
         self._groups = groups
         self._build_token_id_to_user_id()
+
+    async def _async_touch(self) -> None:
+        """Yield to the loop so async callers can await a real coroutine."""
+        await asyncio.sleep(0)
+
+    async def _async_mark_dirty(self) -> None:
+        """Schedule save and yield once to keep async contract."""
+        self._async_schedule_save()
+        await asyncio.sleep(0)
 
 
 def _system_admin_group() -> models.Group:
