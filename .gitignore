@@ -142,6 +142,13 @@ pytest_buckets.txt
 # AI tooling
 .claude/settings.local.json
 
+<<<<<<< HEAD
 /.sonar
 .scannerwork/
 
+=======
+#sonar quebe
+.sonar/report-task.txt
+
+.sonar/
+>>>>>>> 6f2ab4ad468 (chore: update .gitignore to ignore .sonar directory)
