@@ -561,7 +561,6 @@ class ConfigEntry[_DataT = Any]:
 
     def __setattr__(self, key: str, value: Any) -> None:
         """Set an attribute."""
-
         if key in UPDATE_ENTRY_CONFIG_ENTRY_ATTRS:
             raise AttributeError(
                 f"{key} cannot be changed directly, use async_update_entry instead"
