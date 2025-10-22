@@ -1,5 +1,5 @@
-import logging
 from datetime import datetime
+import logging
 from unittest.mock import MagicMock
 
 from homeassistant.components.buienradar.sensor import BrSensor
@@ -29,6 +29,7 @@ TIMEFRAME = "Timeframe"
 
 _LOGGER = logging.getLogger(__name__)
 NO_FORECAST_MSG = "No forecast for fcday=%s"
+
 
 class TestConstantsAreImportable:
     """Test that constants can be imported and used."""
@@ -97,7 +98,6 @@ class TestBrSensorHelpers:
 
     def test_load_data_skips_update_when_unchanged(self):
         """Test that _load_data returns False when measurement hasn't changed."""
-        from datetime import datetime
 
         measured_time = datetime(2025, 10, 19, 12, 0, 0)
         data = {"measured": measured_time, "temperature": 20.0}
@@ -242,7 +242,7 @@ class TestLoadPrecipitationForecastData:
         assert result is True
         assert self.sensor._timeframe == 120
         assert self.sensor._attr_native_value == 10.0
-    
+
     def test_load_forecast_condition_data_all_branches(self, caplog):
         """Test _load_forecast_condition_data handles all scenarios correctly."""
 
