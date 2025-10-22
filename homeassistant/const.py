@@ -313,7 +313,7 @@ STATE_UNAVAILABLE: Final = "unavailable"
 STATE_OK: Final = "ok"
 STATE_PROBLEM: Final = "problem"
 
-#buiredar constant 
+# buiredar constant
 SENSOR_MDI_GAUGE = "mdi:gauge"
 SENSOR_WEATHER_WINDY = "mdi:weather-windy"
 SENSOR_COMAPASS_OUTLINE = "mdi:compass-outline"
