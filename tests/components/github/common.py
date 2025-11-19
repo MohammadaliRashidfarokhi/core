@@ -23,6 +23,9 @@ async def setup_github_integration(
 ) -> None:
     """Mock setting up the integration."""
     headers = json.loads(await async_load_fixture(hass, "base_headers.json", DOMAIN))
+    workflow_runs = json.loads(
+        await async_load_fixture(hass, "workflow_runs.json", DOMAIN)
+    )
     for idx, repository in enumerate(mock_config_entry.options[CONF_REPOSITORIES]):
         aioclient_mock.get(
             f"https://api.github.com/repos/{repository}",
@@ -36,6 +39,11 @@ async def setup_github_integration(
         aioclient_mock.get(
             f"https://api.github.com/repos/{repository}/events",
             json=[],
+            headers=headers,
+        )
+        aioclient_mock.get(
+            f"https://api.github.com/repos/{repository}/actions/runs",
+            json=workflow_runs,
             headers=headers,
         )
     aioclient_mock.post(

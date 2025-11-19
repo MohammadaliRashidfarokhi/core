@@ -20,9 +20,10 @@ PLATFORMS: list[Platform] = [Platform.SENSOR]
 
 async def async_setup_entry(hass: HomeAssistant, entry: GithubConfigEntry) -> bool:
     """Set up GitHub from a config entry."""
+    session = async_get_clientsession(hass)
     client = GitHubAPI(
         token=entry.data[CONF_ACCESS_TOKEN],
-        session=async_get_clientsession(hass),
+        session=session,
         client_name=SERVER_SOFTWARE,
     )
 
@@ -35,6 +36,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: GithubConfigEntry) -> bo
             config_entry=entry,
             client=client,
             repository=repository,
+            session=session,
+            access_token=entry.data[CONF_ACCESS_TOKEN],
         )
 
         await coordinator.async_config_entry_first_refresh()

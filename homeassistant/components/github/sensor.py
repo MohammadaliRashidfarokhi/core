@@ -22,6 +22,28 @@ from .const import DOMAIN
 from .coordinator import GithubConfigEntry, GitHubDataUpdateCoordinator
 
 
+WORKFLOW_STATUS_SUCCESS = "success"
+WORKFLOW_STATUS_FAILURE = "failure"
+WORKFLOW_STATUS_IN_PROGRESS = "in_progress"
+WORKFLOW_STATUS_UNKNOWN = "unknown"
+WORKFLOW_NO_ACTIVITY = "No Workflow Activity"
+WORKFLOW_STATUS_PROGRESS_STATES = {"queued", "in_progress", "pending", "waiting"}
+WORKFLOW_STATUS_FAILURE_STATES = {
+    "failure",
+    "cancelled",
+    "timed_out",
+    "action_required",
+    "startup_failure",
+    "stale",
+    "neutral",
+}
+WORKFLOW_ICON_MAP = {
+    WORKFLOW_STATUS_SUCCESS: "mdi:check-circle",
+    WORKFLOW_STATUS_FAILURE: "mdi:alert-circle",
+    WORKFLOW_STATUS_IN_PROGRESS: "mdi:progress-clock",
+}
+
+
 @dataclass(frozen=True, kw_only=True)
 class GitHubSensorEntityDescription(SensorEntityDescription):
     """Describes GitHub issue sensor entity."""
@@ -30,6 +52,136 @@ class GitHubSensorEntityDescription(SensorEntityDescription):
 
     attr_fn: Callable[[dict[str, Any]], Mapping[str, Any] | None] = lambda data: None
     avabl_fn: Callable[[dict[str, Any]], bool] = lambda data: True
+
+
+def _workflow_data(data: dict[str, Any]) -> dict[str, Any]:
+    """Return workflow run payload from coordinator data."""
+    workflow_data = data.get("workflow_runs")
+    if isinstance(workflow_data, dict):
+        return workflow_data
+    return {"recent_runs": []}
+
+
+def _workflow_runs(data: dict[str, Any]) -> list[dict[str, Any]]:
+    """Return cached workflow runs."""
+    workflow_data = _workflow_data(data)
+    runs = workflow_data.get("recent_runs")
+    if isinstance(runs, list):
+        return runs
+    return []
+
+
+def _latest_workflow_run(data: dict[str, Any]) -> dict[str, Any] | None:
+    """Return the most recent workflow run."""
+    runs = _workflow_runs(data)
+    if runs:
+        return runs[0]
+    return None
+
+
+def _workflow_display_title(run: dict[str, Any]) -> str:
+    """Return a printable workflow title."""
+    for key in ("display_title", "name"):
+        if title := run.get(key):
+            return str(title)[:255]
+    return WORKFLOW_STATUS_UNKNOWN
+
+
+def _normalize_workflow_status(run: dict[str, Any]) -> str:
+    """Normalize the workflow run status string."""
+    status = str(run.get("status") or "").lower()
+    conclusion = str(run.get("conclusion") or "").lower()
+    if status in WORKFLOW_STATUS_PROGRESS_STATES:
+        return WORKFLOW_STATUS_IN_PROGRESS
+    if status and status != "completed":
+        return status
+    if conclusion == WORKFLOW_STATUS_SUCCESS:
+        return WORKFLOW_STATUS_SUCCESS
+    if conclusion in WORKFLOW_STATUS_FAILURE_STATES:
+        return WORKFLOW_STATUS_FAILURE
+    if conclusion:
+        return conclusion
+    return WORKFLOW_STATUS_UNKNOWN
+
+
+def _workflow_state_value(data: dict[str, Any]) -> str:
+    """Return sensor state representing workflow runs."""
+    latest_run = _latest_workflow_run(data)
+    if not latest_run:
+        return WORKFLOW_NO_ACTIVITY
+    status = _normalize_workflow_status(latest_run)
+    return f"{_workflow_display_title(latest_run)} ({status})"
+
+
+def _serialize_workflow_run(run: dict[str, Any]) -> dict[str, Any]:
+    """Serialize a workflow run entry."""
+    return {
+        "run_id": run.get("id"),
+        "display_title": _workflow_display_title(run),
+        "status": _normalize_workflow_status(run),
+        "head_branch": run.get("head_branch") or WORKFLOW_STATUS_UNKNOWN,
+        "run_started_at": run.get("run_started_at") or WORKFLOW_STATUS_UNKNOWN,
+        "html_url": run.get("html_url"),
+    }
+
+
+def _workflow_counts(runs: list[dict[str, Any]]) -> dict[str, int]:
+    """Return aggregate counts for workflow runs."""
+    counts = {
+        "successful_runs": 0,
+        "failed_runs": 0,
+        "in_progress_runs": 0,
+    }
+    for run in runs:
+        status = _normalize_workflow_status(run)
+        if status == WORKFLOW_STATUS_SUCCESS:
+            counts["successful_runs"] += 1
+        elif status == WORKFLOW_STATUS_IN_PROGRESS:
+            counts["in_progress_runs"] += 1
+        else:
+            counts["failed_runs"] += 1
+    return counts
+
+
+def _workflow_attributes(data: dict[str, Any]) -> Mapping[str, Any]:
+    """Return workflow sensor attributes."""
+    runs = _workflow_runs(data)
+    latest_run = runs[0] if runs else None
+    attributes: dict[str, Any] = {
+        **_workflow_counts(runs),
+        "recent_runs": [_serialize_workflow_run(run) for run in runs],
+    }
+    if latest_run:
+        attributes.update(
+            {
+                "run_id": latest_run.get("id"),
+                "display_title": _workflow_display_title(latest_run),
+                "head_branch": latest_run.get("head_branch")
+                or WORKFLOW_STATUS_UNKNOWN,
+                "status": _normalize_workflow_status(latest_run),
+                "run_started_at": latest_run.get("run_started_at")
+                or WORKFLOW_STATUS_UNKNOWN,
+                "latest_run_url": latest_run.get("html_url"),
+            }
+        )
+    else:
+        attributes.update(
+            {
+                "status": WORKFLOW_STATUS_UNKNOWN,
+                "head_branch": WORKFLOW_STATUS_UNKNOWN,
+                "run_started_at": WORKFLOW_STATUS_UNKNOWN,
+                "latest_run_url": None,
+            }
+        )
+    return attributes
+
+
+def _workflow_status(data: dict[str, Any]) -> str:
+    """Return the normalized status for the latest workflow run."""
+    latest_run = _latest_workflow_run(data)
+    if not latest_run:
+        return WORKFLOW_STATUS_UNKNOWN
+    return _normalize_workflow_status(latest_run)
 
 
 SENSOR_DESCRIPTIONS: tuple[GitHubSensorEntityDescription, ...] = (
@@ -133,6 +285,12 @@ SENSOR_DESCRIPTIONS: tuple[GitHubSensorEntityDescription, ...] = (
             "url": data["refs"]["tags"][0]["target"]["url"],
         },
     ),
+    GitHubSensorEntityDescription(
+        key="workflow_runs",
+        translation_key="workflow_runs",
+        value_fn=lambda data: _workflow_state_value(data),
+        attr_fn=lambda data: _workflow_attributes(data),
+    ),
 )
 
 
@@ -197,3 +355,11 @@ class GitHubSensorEntity(CoordinatorEntity[GitHubDataUpdateCoordinator], SensorE
     def extra_state_attributes(self) -> Mapping[str, Any] | None:
         """Return the extra state attributes."""
         return self.entity_description.attr_fn(self.coordinator.data)
+
+    @property
+    def icon(self) -> str | None:
+        """Return a dynamic icon for workflow sensors."""
+        if self.entity_description.key != "workflow_runs":
+            return super().icon
+        status = _workflow_status(self.coordinator.data)
+        return WORKFLOW_ICON_MAP.get(status, "mdi:progress-question")

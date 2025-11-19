@@ -1,0 +1,65 @@
+{
+  "total_count": 6,
+  "workflow_runs": [
+    {
+      "id": 18952639482,
+      "name": "Deploy Backend (Elastic Beanstalk)",
+      "display_title": "Deploy Backend (Elastic Beanstalk)",
+      "head_branch": "main",
+      "status": "completed",
+      "conclusion": "success",
+      "run_started_at": "2025-10-30T19:24:38Z",
+      "html_url": "https://github.com/NetologyAB/cold-marketing-engine/actions/runs/18952639482"
+    },
+    {
+      "id": 18952639483,
+      "name": "Deploy Backend (Elastic Beanstalk)",
+      "display_title": "Deploy Backend (Elastic Beanstalk)",
+      "head_branch": "main",
+      "status": "completed",
+      "conclusion": "failure",
+      "run_started_at": "2025-10-29T18:24:38Z",
+      "html_url": "https://github.com/NetologyAB/cold-marketing-engine/actions/runs/18952639483"
+    },
+    {
+      "id": 18952639484,
+      "name": "Deploy Backend (Elastic Beanstalk)",
+      "display_title": "Deploy Backend (Elastic Beanstalk)",
+      "head_branch": "develop",
+      "status": "in_progress",
+      "conclusion": null,
+      "run_started_at": "2025-10-28T18:24:38Z",
+      "html_url": "https://github.com/NetologyAB/cold-marketing-engine/actions/runs/18952639484"
+    },
+    {
+      "id": 18952639485,
+      "name": "Deploy Backend (Elastic Beanstalk)",
+      "display_title": "Deploy Backend (Elastic Beanstalk)",
+      "head_branch": "develop",
+      "status": "completed",
+      "conclusion": "success",
+      "run_started_at": "2025-10-27T18:24:38Z",
+      "html_url": "https://github.com/NetologyAB/cold-marketing-engine/actions/runs/18952639485"
+    },
+    {
+      "id": 18952639486,
+      "name": "Deploy Backend (Elastic Beanstalk)",
+      "display_title": "Deploy Backend (Elastic Beanstalk)",
+      "head_branch": "release",
+      "status": "completed",
+      "conclusion": "timed_out",
+      "run_started_at": "2025-10-26T18:24:38Z",
+      "html_url": "https://github.com/NetologyAB/cold-marketing-engine/actions/runs/18952639486"
+    },
+    {
+      "id": 18952639487,
+      "name": "Deploy Backend (Elastic Beanstalk)",
+      "display_title": "Deploy Backend (Elastic Beanstalk)",
+      "head_branch": "main",
+      "status": "queued",
+      "conclusion": null,
+      "run_started_at": "2025-10-25T18:24:38Z",
+      "html_url": "https://github.com/NetologyAB/cold-marketing-engine/actions/runs/18952639487"
+    }
+  ]
+}

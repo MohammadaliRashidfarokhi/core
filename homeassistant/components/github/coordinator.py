@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+from http import HTTPStatus
+import asyncio
 from typing import Any
 
+from aiohttp import ClientError, ClientSession
 from aiogithubapi import (
     GitHubAPI,
     GitHubConnectionException,
@@ -16,9 +19,14 @@ from aiogithubapi import (
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import EVENT_HOMEASSISTANT_STOP
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers.aiohttp_client import SERVER_SOFTWARE
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
 from .const import FALLBACK_UPDATE_INTERVAL, LOGGER, REFRESH_EVENT_TYPES
+
+WORKFLOW_PAGE_SIZE = 25
+WORKFLOW_MINIMUM_RUNS = 5
+WORKFLOW_RECENT_RUNS = 5
 
 GRAPHQL_REPOSITORY_QUERY = """
 query ($owner: String!, $repository: String!) {
@@ -113,13 +121,19 @@ class GitHubDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         config_entry: GithubConfigEntry,
         client: GitHubAPI,
         repository: str,
+        session: ClientSession,
+        access_token: str,
     ) -> None:
         """Initialize GitHub data update coordinator base class."""
         self.repository = repository
         self._client = client
+        self._session = session
+        self._access_token = access_token
         self._last_response: GitHubResponseModel[dict[str, Any]] | None = None
         self._subscription_id: str | None = None
         self.data = {}
+        self._workflow_etag: str | None = None
+        self._workflow_runs: dict[str, Any] = {"recent_runs": []}
 
         super().__init__(
             hass,
@@ -146,7 +160,64 @@ class GitHubDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             raise UpdateFailed(exception) from exception
 
         self._last_response = response
-        return response.data["data"]["repository"]
+        repository_data = response.data["data"]["repository"]
+        repository_data["workflow_runs"] = await self._async_workflow_runs()
+        return repository_data
+
+    async def _async_workflow_runs(self) -> dict[str, Any]:
+        """Retrieve workflow run information for the repository."""
+        try:
+            return await self._async_fetch_workflow_runs()
+        except (asyncio.TimeoutError, ClientError, ValueError) as err:
+            LOGGER.debug(
+                "Unable to refresh workflow runs for %s: %s", self.repository, err
+            )
+        return self._workflow_runs
+
+    async def _async_fetch_workflow_runs(self) -> dict[str, Any]:
+        """Fetch workflow runs using the GitHub REST API."""
+        runs: list[dict[str, Any]] = []
+        page = 1
+        include_etag = True
+        while len(runs) < WORKFLOW_MINIMUM_RUNS:
+            headers = self._workflow_headers(include_etag=include_etag)
+            params = {"per_page": WORKFLOW_PAGE_SIZE, "page": page}
+            async with self._session.get(
+                f"https://api.github.com/repos/{self.repository}/actions/runs",
+                headers=headers,
+                params=params,
+            ) as response:
+                if include_etag and response.status == HTTPStatus.NOT_MODIFIED:
+                    return self._workflow_runs
+                response.raise_for_status()
+                payload = await response.json()
+                response_headers = response.headers
+
+            if include_etag:
+                self._workflow_etag = response_headers.get("ETag") or response_headers.get(
+                    "Etag"
+                )
+                include_etag = False
+            runs_page = payload.get("workflow_runs", [])
+            runs.extend(runs_page)
+            if len(runs_page) < WORKFLOW_PAGE_SIZE:
+                break
+            page += 1
+
+        self._workflow_runs = {"recent_runs": runs[:WORKFLOW_RECENT_RUNS]}
+        return self._workflow_runs
+
+    def _workflow_headers(self, *, include_etag: bool) -> dict[str, str]:
+        """Return headers for workflow run requests."""
+        headers = {
+            "Accept": "application/vnd.github+json",
+            "Authorization": f"Bearer {self._access_token}",
+            "User-Agent": SERVER_SOFTWARE,
+            "X-GitHub-Api-Version": "2022-11-28",
+        }
+        if include_etag and self._workflow_etag:
+            headers["If-None-Match"] = self._workflow_etag
+        return headers
 
     async def _handle_event(self, event: GitHubEventModel) -> None:
         """Handle an event."""
@@ -167,6 +238,6 @@ class GitHubDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         )
         self.hass.bus.async_listen_once(EVENT_HOMEASSISTANT_STOP, self.unsubscribe)
 
-    def unsubscribe(self, *args) -> None:
+    def unsubscribe(self, *args: Any) -> None:
         """Unsubscribe to repository events."""
         self._client.repos.events.unsubscribe(subscription_id=self._subscription_id)
