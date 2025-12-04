@@ -35,11 +35,13 @@ WORKFLOW_STATUS_FAILURE_STATES = {
     "startup_failure",
     "stale",
     "neutral",
+    "skipped",
 }
 WORKFLOW_ICON_MAP = {
     WORKFLOW_STATUS_SUCCESS: "mdi:check-circle",
     WORKFLOW_STATUS_FAILURE: "mdi:alert-circle",
     WORKFLOW_STATUS_IN_PROGRESS: "mdi:progress-clock",
+    "skipped": "mdi:skip-forward",
 }
 
 
@@ -311,18 +313,21 @@ SENSOR_DESCRIPTIONS: tuple[GitHubSensorEntityDescription, ...] = (
     GitHubSensorEntityDescription(
         key="workflow_runs",
         translation_key="workflow_runs",
+        name="Workflow runs",
         value_fn=_workflow_state_value,
         attr_fn=_workflow_attributes,
     ),
     GitHubSensorEntityDescription(
         key="workflow_summary",
         translation_key="workflow_summary",
+        name="Workflow summary",
         value_fn=_workflow_summary_value,
         attr_fn=_workflow_attributes,
     ),
     GitHubSensorEntityDescription(
         key="workflow_activity",
         translation_key="workflow_activity",
+        name="Workflow activity",
         value_fn=_workflow_activity_value,
         attr_fn=_workflow_attributes,
     ),
