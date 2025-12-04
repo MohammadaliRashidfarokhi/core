@@ -12,9 +12,13 @@ DOMAIN = "github"
 CLIENT_ID = "1440cafcc86e3ea5d6a2"
 
 DEFAULT_REPOSITORIES = ["home-assistant/core", "esphome/esphome"]
-FALLBACK_UPDATE_INTERVAL = timedelta(hours=1, minutes=30)
+FALLBACK_UPDATE_INTERVAL = timedelta(minutes=15)
+FAST_UPDATE_INTERVAL = timedelta(minutes=5)
 
 CONF_REPOSITORIES = "repositories"
+CONF_WORKFLOW_POLLING_INTERVAL = "workflow_polling_interval"
+DEFAULT_WORKFLOW_POLLING_INTERVAL_MINUTES = 15
+FAST_WORKFLOW_POLLING_INTERVAL_MINUTES = 5
 
 
 REFRESH_EVENT_TYPES = (

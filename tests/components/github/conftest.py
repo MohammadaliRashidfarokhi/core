@@ -5,7 +5,12 @@ from unittest.mock import patch
 
 import pytest
 
-from homeassistant.components.github.const import CONF_REPOSITORIES, DOMAIN
+from homeassistant.components.github.const import (
+    CONF_REPOSITORIES,
+    CONF_WORKFLOW_POLLING_INTERVAL,
+    DEFAULT_WORKFLOW_POLLING_INTERVAL_MINUTES,
+    DOMAIN,
+)
 from homeassistant.const import CONF_ACCESS_TOKEN
 from homeassistant.core import HomeAssistant
 
@@ -22,7 +27,10 @@ def mock_config_entry() -> MockConfigEntry:
         title="",
         domain=DOMAIN,
         data={CONF_ACCESS_TOKEN: MOCK_ACCESS_TOKEN},
-        options={CONF_REPOSITORIES: [TEST_REPOSITORY]},
+        options={
+            CONF_REPOSITORIES: [TEST_REPOSITORY],
+            CONF_WORKFLOW_POLLING_INTERVAL: DEFAULT_WORKFLOW_POLLING_INTERVAL_MINUTES,
+        },
     )
 
 

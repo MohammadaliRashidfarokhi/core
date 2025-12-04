@@ -29,7 +29,16 @@ from homeassistant.helpers.aiohttp_client import (
     async_get_clientsession,
 )
 
-from .const import CLIENT_ID, CONF_REPOSITORIES, DEFAULT_REPOSITORIES, DOMAIN, LOGGER
+from .const import (
+    CLIENT_ID,
+    CONF_REPOSITORIES,
+    CONF_WORKFLOW_POLLING_INTERVAL,
+    DEFAULT_REPOSITORIES,
+    DEFAULT_WORKFLOW_POLLING_INTERVAL_MINUTES,
+    DOMAIN,
+    FAST_WORKFLOW_POLLING_INTERVAL_MINUTES,
+    LOGGER,
+)
 
 
 async def get_repositories(hass: HomeAssistant, access_token: str) -> list[str]:
@@ -195,7 +204,10 @@ class GitHubConfigFlow(ConfigFlow, domain=DOMAIN):
         return self.async_create_entry(
             title="",
             data={CONF_ACCESS_TOKEN: self._login.access_token},
-            options={CONF_REPOSITORIES: user_input[CONF_REPOSITORIES]},
+            options={
+                CONF_REPOSITORIES: user_input[CONF_REPOSITORIES],
+                CONF_WORKFLOW_POLLING_INTERVAL: DEFAULT_WORKFLOW_POLLING_INTERVAL_MINUTES,
+            },
         )
 
     async def async_step_could_not_register(
@@ -226,6 +238,10 @@ class OptionsFlowHandler(OptionsFlowWithReload):
             configured_repositories: list[str] = self.config_entry.options[
                 CONF_REPOSITORIES
             ]
+            polling_interval = self.config_entry.options.get(
+                CONF_WORKFLOW_POLLING_INTERVAL,
+                DEFAULT_WORKFLOW_POLLING_INTERVAL_MINUTES,
+            )
             repositories = await get_repositories(
                 self.hass, self.config_entry.data[CONF_ACCESS_TOKEN]
             )
@@ -243,6 +259,15 @@ class OptionsFlowHandler(OptionsFlowWithReload):
                             CONF_REPOSITORIES,
                             default=configured_repositories,
                         ): cv.multi_select({k: k for k in repositories}),
+                        vol.Required(
+                            CONF_WORKFLOW_POLLING_INTERVAL,
+                            default=polling_interval,
+                        ): vol.In(
+                            [
+                                DEFAULT_WORKFLOW_POLLING_INTERVAL_MINUTES,
+                                FAST_WORKFLOW_POLLING_INTERVAL_MINUTES,
+                            ]
+                        ),
                     }
                 ),
             )

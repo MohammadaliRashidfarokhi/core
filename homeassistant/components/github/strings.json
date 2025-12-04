@@ -62,6 +62,12 @@
       },
       "workflow_runs": {
         "name": "Workflow runs"
+      },
+      "workflow_summary": {
+        "name": "Workflow summary"
+      },
+      "workflow_activity": {
+        "name": "Workflow activity"
       }
     }
   }

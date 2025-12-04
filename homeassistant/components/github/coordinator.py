@@ -2,11 +2,10 @@
 
 from __future__ import annotations
 
+from datetime import timedelta
 from http import HTTPStatus
-import asyncio
 from typing import Any
 
-from aiohttp import ClientError, ClientSession
 from aiogithubapi import (
     GitHubAPI,
     GitHubConnectionException,
@@ -15,6 +14,7 @@ from aiogithubapi import (
     GitHubRatelimitException,
     GitHubResponseModel,
 )
+from aiohttp import ClientError, ClientSession
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import EVENT_HOMEASSISTANT_STOP
@@ -22,7 +22,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.aiohttp_client import SERVER_SOFTWARE
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
-from .const import FALLBACK_UPDATE_INTERVAL, LOGGER, REFRESH_EVENT_TYPES
+from .const import LOGGER, REFRESH_EVENT_TYPES
 
 WORKFLOW_PAGE_SIZE = 25
 WORKFLOW_MINIMUM_RUNS = 5
@@ -123,6 +123,7 @@ class GitHubDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         repository: str,
         session: ClientSession,
         access_token: str,
+        update_interval: timedelta,
     ) -> None:
         """Initialize GitHub data update coordinator base class."""
         self.repository = repository
@@ -140,7 +141,7 @@ class GitHubDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             LOGGER,
             config_entry=config_entry,
             name=repository,
-            update_interval=FALLBACK_UPDATE_INTERVAL,
+            update_interval=update_interval,
         )
 
     async def _async_update_data(self) -> GitHubResponseModel[dict[str, Any]]:
@@ -168,7 +169,7 @@ class GitHubDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         """Retrieve workflow run information for the repository."""
         try:
             return await self._async_fetch_workflow_runs()
-        except (asyncio.TimeoutError, ClientError, ValueError) as err:
+        except (TimeoutError, ClientError, ValueError) as err:
             LOGGER.debug(
                 "Unable to refresh workflow runs for %s: %s", self.repository, err
             )
@@ -194,9 +195,9 @@ class GitHubDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 response_headers = response.headers
 
             if include_etag:
-                self._workflow_etag = response_headers.get("ETag") or response_headers.get(
-                    "Etag"
-                )
+                self._workflow_etag = response_headers.get(
+                    "ETag"
+                ) or response_headers.get("Etag")
                 include_etag = False
             runs_page = payload.get("workflow_runs", [])
             runs.extend(runs_page)

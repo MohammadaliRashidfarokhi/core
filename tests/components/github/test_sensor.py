@@ -15,6 +15,8 @@ from tests.test_util.aiohttp import AiohttpClientMocker
 
 TEST_SENSOR_ENTITY = "sensor.octocat_hello_world_latest_release"
 WORKFLOW_SENSOR_ENTITY = "sensor.octocat_hello_world_workflow_runs"
+WORKFLOW_SUMMARY_SENSOR_ENTITY = "sensor.octocat_hello_world_workflow_summary"
+WORKFLOW_ACTIVITY_SENSOR_ENTITY = "sensor.octocat_hello_world_workflow_activity"
 
 
 # This tests needs to be adjusted to remove lingering tasks
@@ -40,9 +42,7 @@ async def test_sensor_updates_with_empty_release_array(
     )
     aioclient_mock.get(
         f"https://api.github.com/repos/{TEST_REPOSITORY}/actions/runs",
-        json=json.loads(
-            await async_load_fixture(hass, "workflow_runs.json", DOMAIN)
-        ),
+        json=json.loads(await async_load_fixture(hass, "workflow_runs.json", DOMAIN)),
         headers=headers,
     )
     aioclient_mock.post(
@@ -63,12 +63,13 @@ async def test_workflow_sensor_attributes(
     init_integration: MockConfigEntry,
 ) -> None:
     """Test workflow run sensor exposes the latest status."""
-    state = hass.states.get(WORKFLOW_SENSOR_ENTITY)
-    assert state
-    assert state.state == "Deploy Backend (Elastic Beanstalk) (success)"
-    attributes = state.attributes
+    summary_state = hass.states.get(WORKFLOW_SUMMARY_SENSOR_ENTITY)
+    assert summary_state
+    assert summary_state.state == "Deploy Backend (Elastic Beanstalk)"
+    attributes = summary_state.attributes
     assert attributes["run_id"] == 18952639482
     assert attributes["status"] == "success"
+    assert attributes["conclusion"] == "success"
     assert attributes["head_branch"] == "main"
     assert attributes["successful_runs"] == 2
     assert attributes["failed_runs"] == 2
@@ -76,7 +77,18 @@ async def test_workflow_sensor_attributes(
     assert attributes["latest_run_url"].startswith("https://github.com/NetologyAB/")
     assert len(attributes["recent_runs"]) == 5
     assert attributes["recent_runs"][2]["status"] == "in_progress"
-    assert attributes["icon"] == "mdi:check-circle"
+    assert attributes["recent_runs"][2]["conclusion"] == "unknown"
+
+    activity_state = hass.states.get(WORKFLOW_ACTIVITY_SENSOR_ENTITY)
+    assert activity_state
+    assert activity_state.state == "success"
+    assert activity_state.attributes["icon"] == "mdi:check-circle"
+    assert activity_state.attributes["latest_run_url"].startswith(
+        "https://github.com/NetologyAB/"
+    )
+
+    runs_state = hass.states.get(WORKFLOW_SENSOR_ENTITY)
+    assert runs_state.state == "Deploy Backend (Elastic Beanstalk) (success)"
 
 
 # This tests needs to be adjusted to remove lingering tasks
@@ -86,7 +98,7 @@ async def test_workflow_sensor_handles_empty_runs(
     init_integration: MockConfigEntry,
     aioclient_mock: AiohttpClientMocker,
 ) -> None:
-    """Test workflow run sensor handles missing runs."""
+    """Non-functional (N.WF.02): Ensure missing runs map to unknown without errors."""
     headers = json.loads(await async_load_fixture(hass, "base_headers.json", DOMAIN))
     response_json = json.loads(await async_load_fixture(hass, "graphql.json", DOMAIN))
     aioclient_mock.clear_requests()
@@ -115,4 +127,89 @@ async def test_workflow_sensor_handles_empty_runs(
     assert state.state == "No Workflow Activity"
     attributes = state.attributes
     assert attributes["status"] == "unknown"
+    assert attributes["conclusion"] == "unknown"
+    assert attributes["latest_run_url"] == "unknown"
+    assert attributes["run_id"] == "unknown"
     assert attributes["recent_runs"] == []
+
+    summary_state = hass.states.get(WORKFLOW_SUMMARY_SENSOR_ENTITY)
+    assert summary_state.state == "No Workflow Activity"
+
+    activity_state = hass.states.get(WORKFLOW_ACTIVITY_SENSOR_ENTITY)
+    assert activity_state.state == "unknown"
+    assert activity_state.attributes["icon"] == "mdi:progress-question"
+
+
+async def test_workflow_sensor_handles_missing_fields(
+    hass: HomeAssistant,
+    init_integration: MockConfigEntry,
+    aioclient_mock: AiohttpClientMocker,
+) -> None:
+    """Non-functional (N.WF.02): Gracefully handle null fields as unknown."""
+    headers = json.loads(await async_load_fixture(hass, "base_headers.json", DOMAIN))
+    response_json = json.loads(await async_load_fixture(hass, "graphql.json", DOMAIN))
+    aioclient_mock.clear_requests()
+    aioclient_mock.get(
+        f"https://api.github.com/repos/{TEST_REPOSITORY}/events",
+        json=[],
+        headers=headers,
+    )
+    aioclient_mock.get(
+        f"https://api.github.com/repos/{TEST_REPOSITORY}/actions/runs",
+        json=json.loads(
+            await async_load_fixture(hass, "workflow_runs_missing_fields.json", DOMAIN)
+        ),
+        headers=headers,
+    )
+    aioclient_mock.post(
+        "https://api.github.com/graphql",
+        json=response_json,
+        headers=headers,
+    )
+
+    async_fire_time_changed(hass, dt_util.utcnow() + FALLBACK_UPDATE_INTERVAL)
+    await hass.async_block_till_done()
+
+    summary_state = hass.states.get(WORKFLOW_SUMMARY_SENSOR_ENTITY)
+    assert summary_state.state == "Unknown Workflow"
+    activity_state = hass.states.get(WORKFLOW_ACTIVITY_SENSOR_ENTITY)
+    assert activity_state.state == "unknown"
+    attributes = activity_state.attributes
+    assert attributes["head_branch"] == "unknown"
+    assert attributes["run_started_at"] == "unknown"
+    assert attributes["latest_run_url"] == "unknown"
+    assert attributes["run_id"] == "unknown"
+    assert attributes["display_title"] == "Unknown Workflow"
+
+
+async def test_workflow_runs_cached_on_etag(
+    hass: HomeAssistant,
+    init_integration: MockConfigEntry,
+    aioclient_mock: AiohttpClientMocker,
+) -> None:
+    """Non-functional (N.WF.04): Use cached runs when server replies 304."""
+    headers = json.loads(await async_load_fixture(hass, "base_headers.json", DOMAIN))
+    aioclient_mock.clear_requests()
+    aioclient_mock.get(
+        f"https://api.github.com/repos/{TEST_REPOSITORY}/events",
+        json=[],
+        headers=headers,
+    )
+    aioclient_mock.get(
+        f"https://api.github.com/repos/{TEST_REPOSITORY}/actions/runs",
+        status=304,
+        headers=headers,
+    )
+    aioclient_mock.post(
+        "https://api.github.com/graphql",
+        json=json.loads(await async_load_fixture(hass, "graphql.json", DOMAIN)),
+        headers=headers,
+    )
+
+    previous_state = hass.states.get(WORKFLOW_SENSOR_ENTITY)
+    async_fire_time_changed(hass, dt_util.utcnow() + FALLBACK_UPDATE_INTERVAL)
+    await hass.async_block_till_done()
+
+    state = hass.states.get(WORKFLOW_SENSOR_ENTITY)
+    assert state == previous_state
+    assert state.attributes["recent_runs"]

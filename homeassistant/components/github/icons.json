@@ -39,6 +39,12 @@
       },
       "workflow_runs": {
         "default": "mdi:progress-clock"
+      },
+      "workflow_summary": {
+        "default": "mdi:clipboard-text-clock"
+      },
+      "workflow_activity": {
+        "default": "mdi:progress-check"
       }
     }
   }

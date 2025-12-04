@@ -3,6 +3,13 @@
 import pytest
 
 from homeassistant.components.github import CONF_REPOSITORIES
+from homeassistant.components.github.const import (
+    CONF_WORKFLOW_POLLING_INTERVAL,
+    DEFAULT_WORKFLOW_POLLING_INTERVAL_MINUTES,
+    FALLBACK_UPDATE_INTERVAL,
+    FAST_UPDATE_INTERVAL,
+    FAST_WORKFLOW_POLLING_INTERVAL_MINUTES,
+)
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import device_registry as dr, entity_registry as er, icon
 
@@ -25,7 +32,10 @@ async def test_device_registry_cleanup(
     mock_config_entry.add_to_hass(hass)
     hass.config_entries.async_update_entry(
         mock_config_entry,
-        options={CONF_REPOSITORIES: ["home-assistant/core"]},
+        options={
+            CONF_REPOSITORIES: ["home-assistant/core"],
+            CONF_WORKFLOW_POLLING_INTERVAL: DEFAULT_WORKFLOW_POLLING_INTERVAL_MINUTES,
+        },
     )
     await setup_github_integration(
         hass, mock_config_entry, aioclient_mock, add_entry_to_hass=False
@@ -40,7 +50,10 @@ async def test_device_registry_cleanup(
 
     hass.config_entries.async_update_entry(
         mock_config_entry,
-        options={CONF_REPOSITORIES: []},
+        options={
+            CONF_REPOSITORIES: [],
+            CONF_WORKFLOW_POLLING_INTERVAL: DEFAULT_WORKFLOW_POLLING_INTERVAL_MINUTES,
+        },
     )
     assert await hass.config_entries.async_reload(mock_config_entry.entry_id)
     await hass.async_block_till_done()
@@ -69,7 +82,10 @@ async def test_subscription_setup(
     mock_config_entry.add_to_hass(hass)
     hass.config_entries.async_update_entry(
         mock_config_entry,
-        options={CONF_REPOSITORIES: ["home-assistant/core"]},
+        options={
+            CONF_REPOSITORIES: ["home-assistant/core"],
+            CONF_WORKFLOW_POLLING_INTERVAL: DEFAULT_WORKFLOW_POLLING_INTERVAL_MINUTES,
+        },
         pref_disable_polling=False,
     )
     await setup_github_integration(
@@ -92,7 +108,10 @@ async def test_subscription_setup_polling_disabled(
     mock_config_entry.add_to_hass(hass)
     hass.config_entries.async_update_entry(
         mock_config_entry,
-        options={CONF_REPOSITORIES: ["home-assistant/core"]},
+        options={
+            CONF_REPOSITORIES: ["home-assistant/core"],
+            CONF_WORKFLOW_POLLING_INTERVAL: DEFAULT_WORKFLOW_POLLING_INTERVAL_MINUTES,
+        },
         pref_disable_polling=True,
     )
     await setup_github_integration(
@@ -132,3 +151,32 @@ async def test_sensor_icons(
     for entity in entities:
         assert entity.translation_key is not None
         assert icons["github"]["sensor"][entity.translation_key] is not None
+
+
+async def test_workflow_polling_interval_defaults(
+    hass: HomeAssistant,
+    mock_config_entry: MockConfigEntry,
+    aioclient_mock: AiohttpClientMocker,
+) -> None:
+    """Non-functional (N.WF.01): Default interval uses 15 minutes."""
+    await setup_github_integration(hass, mock_config_entry, aioclient_mock)
+    coordinator = next(iter(mock_config_entry.runtime_data.values()))
+    assert coordinator.update_interval == FALLBACK_UPDATE_INTERVAL
+
+
+async def test_workflow_polling_interval_fast_option(
+    hass: HomeAssistant,
+    mock_config_entry: MockConfigEntry,
+    aioclient_mock: AiohttpClientMocker,
+) -> None:
+    """Non-functional (N.WF.01): Selecting fast interval uses 5 minutes."""
+    hass.config_entries.async_update_entry(
+        mock_config_entry,
+        options={
+            **mock_config_entry.options,
+            CONF_WORKFLOW_POLLING_INTERVAL: FAST_WORKFLOW_POLLING_INTERVAL_MINUTES,
+        },
+    )
+    await setup_github_integration(hass, mock_config_entry, aioclient_mock)
+    coordinator = next(iter(mock_config_entry.runtime_data.values()))
+    assert coordinator.update_interval == FAST_UPDATE_INTERVAL

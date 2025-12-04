@@ -21,7 +21,6 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from .const import DOMAIN
 from .coordinator import GithubConfigEntry, GitHubDataUpdateCoordinator
 
-
 WORKFLOW_STATUS_SUCCESS = "success"
 WORKFLOW_STATUS_FAILURE = "failure"
 WORKFLOW_STATUS_IN_PROGRESS = "in_progress"
@@ -79,6 +78,14 @@ def _latest_workflow_run(data: dict[str, Any]) -> dict[str, Any] | None:
     return None
 
 
+def _workflow_summary_value(data: dict[str, Any]) -> str:
+    """Return workflow summary sensor value."""
+    latest_run = _latest_workflow_run(data)
+    if not latest_run:
+        return WORKFLOW_NO_ACTIVITY
+    return _workflow_display_title(latest_run)
+
+
 def _workflow_display_title(run: dict[str, Any]) -> str:
     """Return a printable workflow title."""
     for key in ("display_title", "name"):
@@ -113,15 +120,26 @@ def _workflow_state_value(data: dict[str, Any]) -> str:
     return f"{_workflow_display_title(latest_run)} ({status})"
 
 
+def _workflow_activity_value(data: dict[str, Any]) -> str:
+    """Return workflow activity status."""
+    latest_run = _latest_workflow_run(data)
+    if not latest_run:
+        return WORKFLOW_STATUS_UNKNOWN
+    return _normalize_workflow_status(latest_run)
+
+
 def _serialize_workflow_run(run: dict[str, Any]) -> dict[str, Any]:
     """Serialize a workflow run entry."""
+    run_id = run.get("id")
+    conclusion = run.get("conclusion")
     return {
-        "run_id": run.get("id"),
+        "run_id": run_id if run_id is not None else WORKFLOW_STATUS_UNKNOWN,
         "display_title": _workflow_display_title(run),
         "status": _normalize_workflow_status(run),
+        "conclusion": conclusion or WORKFLOW_STATUS_UNKNOWN,
         "head_branch": run.get("head_branch") or WORKFLOW_STATUS_UNKNOWN,
         "run_started_at": run.get("run_started_at") or WORKFLOW_STATUS_UNKNOWN,
-        "html_url": run.get("html_url"),
+        "html_url": run.get("html_url") or WORKFLOW_STATUS_UNKNOWN,
     }
 
 
@@ -152,16 +170,18 @@ def _workflow_attributes(data: dict[str, Any]) -> Mapping[str, Any]:
         "recent_runs": [_serialize_workflow_run(run) for run in runs],
     }
     if latest_run:
+        conclusion = latest_run.get("conclusion")
+        run_id = latest_run.get("id")
         attributes.update(
             {
-                "run_id": latest_run.get("id"),
+                "run_id": run_id if run_id is not None else WORKFLOW_STATUS_UNKNOWN,
                 "display_title": _workflow_display_title(latest_run),
-                "head_branch": latest_run.get("head_branch")
-                or WORKFLOW_STATUS_UNKNOWN,
+                "head_branch": latest_run.get("head_branch") or WORKFLOW_STATUS_UNKNOWN,
                 "status": _normalize_workflow_status(latest_run),
+                "conclusion": conclusion or WORKFLOW_STATUS_UNKNOWN,
                 "run_started_at": latest_run.get("run_started_at")
                 or WORKFLOW_STATUS_UNKNOWN,
-                "latest_run_url": latest_run.get("html_url"),
+                "latest_run_url": latest_run.get("html_url") or WORKFLOW_STATUS_UNKNOWN,
             }
         )
     else:
@@ -169,8 +189,11 @@ def _workflow_attributes(data: dict[str, Any]) -> Mapping[str, Any]:
             {
                 "status": WORKFLOW_STATUS_UNKNOWN,
                 "head_branch": WORKFLOW_STATUS_UNKNOWN,
+                "conclusion": WORKFLOW_STATUS_UNKNOWN,
                 "run_started_at": WORKFLOW_STATUS_UNKNOWN,
-                "latest_run_url": None,
+                "latest_run_url": WORKFLOW_STATUS_UNKNOWN,
+                "run_id": WORKFLOW_STATUS_UNKNOWN,
+                "display_title": WORKFLOW_STATUS_UNKNOWN,
             }
         )
     return attributes
@@ -288,8 +311,20 @@ SENSOR_DESCRIPTIONS: tuple[GitHubSensorEntityDescription, ...] = (
     GitHubSensorEntityDescription(
         key="workflow_runs",
         translation_key="workflow_runs",
-        value_fn=lambda data: _workflow_state_value(data),
-        attr_fn=lambda data: _workflow_attributes(data),
+        value_fn=_workflow_state_value,
+        attr_fn=_workflow_attributes,
+    ),
+    GitHubSensorEntityDescription(
+        key="workflow_summary",
+        translation_key="workflow_summary",
+        value_fn=_workflow_summary_value,
+        attr_fn=_workflow_attributes,
+    ),
+    GitHubSensorEntityDescription(
+        key="workflow_activity",
+        translation_key="workflow_activity",
+        value_fn=_workflow_activity_value,
+        attr_fn=_workflow_attributes,
     ),
 )
 
@@ -359,7 +394,10 @@ class GitHubSensorEntity(CoordinatorEntity[GitHubDataUpdateCoordinator], SensorE
     @property
     def icon(self) -> str | None:
         """Return a dynamic icon for workflow sensors."""
-        if self.entity_description.key != "workflow_runs":
+        if self.entity_description.key not in {
+            "workflow_runs",
+            "workflow_activity",
+        }:
             return super().icon
         status = _workflow_status(self.coordinator.data)
         return WORKFLOW_ICON_MAP.get(status, "mdi:progress-question")
