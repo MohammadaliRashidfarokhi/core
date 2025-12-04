@@ -1,0 +1,13 @@
+{
+  "total_count": 2,
+  "items": [
+    {
+      "number": 123,
+      "html_url": "https://github.com/octocat/Hello-World/issues/123"
+    },
+    {
+      "number": 456,
+      "html_url": "https://github.com/octocat/Hello-World/issues/456"
+    }
+  ]
+}

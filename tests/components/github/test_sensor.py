@@ -18,6 +18,7 @@ WORKFLOW_SENSOR_ENTITY = "sensor.octocat_hello_world_workflow_runs"
 WORKFLOW_SUMMARY_SENSOR_ENTITY = "sensor.octocat_hello_world_workflow_summary"
 WORKFLOW_ACTIVITY_SENSOR_ENTITY = "sensor.octocat_hello_world_workflow_activity"
 TRENDING_SENSOR_ENTITY = "sensor.octocat_hello_world_trending_item"
+LABEL_SENSOR_ENTITY = "sensor.octocat_hello_world_bug_issues"
 
 
 # This tests needs to be adjusted to remove lingering tasks
@@ -118,6 +119,17 @@ async def test_workflow_sensor_handles_empty_runs(
         ),
         headers=headers,
     )
+    aioclient_mock.get(
+        "https://api.github.com/search/issues",
+        params={
+            "q": f'repo:{TEST_REPOSITORY} state:open type:issue label:"bug"',
+            "per_page": 50,
+        },
+        json=json.loads(
+            await async_load_fixture(hass, "label_search_bug.json", DOMAIN)
+        ),
+        headers=headers,
+    )
     aioclient_mock.post(
         "https://api.github.com/graphql",
         json=response_json,
@@ -162,6 +174,17 @@ async def test_workflow_sensor_handles_missing_fields(
         f"https://api.github.com/repos/{TEST_REPOSITORY}/actions/runs",
         json=json.loads(
             await async_load_fixture(hass, "workflow_runs_missing_fields.json", DOMAIN)
+        ),
+        headers=headers,
+    )
+    aioclient_mock.get(
+        "https://api.github.com/search/issues",
+        params={
+            "q": f'repo:{TEST_REPOSITORY} state:open type:issue label:"bug"',
+            "per_page": 50,
+        },
+        json=json.loads(
+            await async_load_fixture(hass, "label_search_bug.json", DOMAIN)
         ),
         headers=headers,
     )
@@ -228,6 +251,17 @@ async def test_trending_sensor_handles_empty_results(
         json=response_json,
         headers=headers,
     )
+    aioclient_mock.get(
+        "https://api.github.com/search/issues",
+        params={
+            "q": f'repo:{TEST_REPOSITORY} state:open type:issue label:"bug"',
+            "per_page": 50,
+        },
+        json=json.loads(
+            await async_load_fixture(hass, "label_search_bug.json", DOMAIN)
+        ),
+        headers=headers,
+    )
 
     coordinator = next(iter(init_integration.runtime_data.values()))
     coordinator._last_trending_fetch = None
@@ -258,6 +292,17 @@ async def test_workflow_runs_cached_on_etag(
         status=304,
         headers=headers,
     )
+    aioclient_mock.get(
+        "https://api.github.com/search/issues",
+        params={
+            "q": f'repo:{TEST_REPOSITORY} state:open type:issue label:"bug"',
+            "per_page": 50,
+        },
+        json=json.loads(
+            await async_load_fixture(hass, "label_search_bug.json", DOMAIN)
+        ),
+        headers=headers,
+    )
     aioclient_mock.post(
         "https://api.github.com/graphql",
         json=json.loads(await async_load_fixture(hass, "graphql.json", DOMAIN)),
@@ -271,3 +316,18 @@ async def test_workflow_runs_cached_on_etag(
     state = hass.states.get(WORKFLOW_SENSOR_ENTITY)
     assert state == previous_state
     assert state.attributes["recent_runs"]
+
+
+async def test_label_issue_sensor(
+    hass: HomeAssistant,
+    init_integration: MockConfigEntry,
+) -> None:
+    """Test label issue sensor shows counts and issue list."""
+    state = hass.states.get(LABEL_SENSOR_ENTITY)
+    assert state
+    assert state.state == "2"
+    attributes = state.attributes
+    assert attributes["label"] == "bug"
+    assert attributes["issues"][0]["number"] == 123
+    assert attributes["issues"][0]["url"].endswith("/issues/123")
+    assert attributes["last_checked"]
