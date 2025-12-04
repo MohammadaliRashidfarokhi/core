@@ -7,7 +7,9 @@ import pytest
 
 from homeassistant.components.github.const import (
     CONF_REPOSITORIES,
+    CONF_TRENDING_LOOKBACK_DAYS,
     CONF_WORKFLOW_POLLING_INTERVAL,
+    DEFAULT_TRENDING_LOOKBACK_DAYS,
     DEFAULT_WORKFLOW_POLLING_INTERVAL_MINUTES,
     DOMAIN,
 )
@@ -30,6 +32,7 @@ def mock_config_entry() -> MockConfigEntry:
         options={
             CONF_REPOSITORIES: [TEST_REPOSITORY],
             CONF_WORKFLOW_POLLING_INTERVAL: DEFAULT_WORKFLOW_POLLING_INTERVAL_MINUTES,
+            CONF_TRENDING_LOOKBACK_DAYS: DEFAULT_TRENDING_LOOKBACK_DAYS,
         },
     )
 

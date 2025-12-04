@@ -32,12 +32,15 @@ from homeassistant.helpers.aiohttp_client import (
 from .const import (
     CLIENT_ID,
     CONF_REPOSITORIES,
+    CONF_TRENDING_LOOKBACK_DAYS,
     CONF_WORKFLOW_POLLING_INTERVAL,
     DEFAULT_REPOSITORIES,
+    DEFAULT_TRENDING_LOOKBACK_DAYS,
     DEFAULT_WORKFLOW_POLLING_INTERVAL_MINUTES,
     DOMAIN,
     FAST_WORKFLOW_POLLING_INTERVAL_MINUTES,
     LOGGER,
+    TRENDING_LOOKBACK_OPTIONS,
 )
 
 
@@ -207,6 +210,7 @@ class GitHubConfigFlow(ConfigFlow, domain=DOMAIN):
             options={
                 CONF_REPOSITORIES: user_input[CONF_REPOSITORIES],
                 CONF_WORKFLOW_POLLING_INTERVAL: DEFAULT_WORKFLOW_POLLING_INTERVAL_MINUTES,
+                CONF_TRENDING_LOOKBACK_DAYS: DEFAULT_TRENDING_LOOKBACK_DAYS,
             },
         )
 
@@ -242,6 +246,9 @@ class OptionsFlowHandler(OptionsFlowWithReload):
                 CONF_WORKFLOW_POLLING_INTERVAL,
                 DEFAULT_WORKFLOW_POLLING_INTERVAL_MINUTES,
             )
+            trending_lookback = self.config_entry.options.get(
+                CONF_TRENDING_LOOKBACK_DAYS, DEFAULT_TRENDING_LOOKBACK_DAYS
+            )
             repositories = await get_repositories(
                 self.hass, self.config_entry.data[CONF_ACCESS_TOKEN]
             )
@@ -259,6 +266,10 @@ class OptionsFlowHandler(OptionsFlowWithReload):
                             CONF_REPOSITORIES,
                             default=configured_repositories,
                         ): cv.multi_select({k: k for k in repositories}),
+                        vol.Required(
+                            CONF_TRENDING_LOOKBACK_DAYS,
+                            default=trending_lookback,
+                        ): vol.In(TRENDING_LOOKBACK_OPTIONS),
                         vol.Required(
                             CONF_WORKFLOW_POLLING_INTERVAL,
                             default=polling_interval,

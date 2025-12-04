@@ -63,7 +63,39 @@
             }
           }
         ]
+      },
+      "trending_discussions": {
+        "nodes": [
+          {
+            "title": "First discussion",
+            "url": "https://github.com/octocat/Hello-World/discussions/1347",
+            "createdAt": "2025-12-01T00:00:00Z",
+            "updatedAt": "2025-12-04T12:30:00Z",
+            "comments": {
+              "totalCount": 3
+            },
+            "reactions": {
+              "totalCount": 5
+            }
+          }
+        ]
       }
+    },
+    "trending_issue_search": {
+      "nodes": [
+        {
+          "title": "Found a bug",
+          "url": "https://github.com/octocat/Hello-World/issues/1347",
+          "createdAt": "2025-12-01T00:00:00Z",
+          "updatedAt": "2025-12-04T12:33:00Z",
+          "comments": {
+            "totalCount": 4
+          },
+          "reactions": {
+            "totalCount": 6
+          }
+        }
+      ]
     }
   }
 }

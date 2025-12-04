@@ -26,6 +26,7 @@ WORKFLOW_STATUS_FAILURE = "failure"
 WORKFLOW_STATUS_IN_PROGRESS = "in_progress"
 WORKFLOW_STATUS_UNKNOWN = "unknown"
 WORKFLOW_NO_ACTIVITY = "No Workflow Activity"
+TRENDING_NO_ACTIVITY = "No Trending Activity"
 WORKFLOW_STATUS_PROGRESS_STATES = {"queued", "in_progress", "pending", "waiting"}
 WORKFLOW_STATUS_FAILURE_STATES = {
     "failure",
@@ -43,6 +44,8 @@ WORKFLOW_ICON_MAP = {
     WORKFLOW_STATUS_IN_PROGRESS: "mdi:progress-clock",
     "skipped": "mdi:skip-forward",
 }
+TRENDING_ICON_ACTIVE = "mdi:fire"
+TRENDING_ICON_INACTIVE = "mdi:fire-off"
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -209,6 +212,34 @@ def _workflow_status(data: dict[str, Any]) -> str:
     return _normalize_workflow_status(latest_run)
 
 
+def _trending_payload(data: dict[str, Any]) -> dict[str, Any]:
+    """Return trending payload from coordinator data."""
+    trending = data.get("trending")
+    if isinstance(trending, dict):
+        return trending
+    return {}
+
+
+def _trending_state_value(data: dict[str, Any]) -> str:
+    """Return title of the trending issue/discussion."""
+    trending = _trending_payload(data)
+    if not trending.get("title"):
+        return TRENDING_NO_ACTIVITY
+    return str(trending["title"])[:255]
+
+
+def _trending_attributes(data: dict[str, Any]) -> Mapping[str, Any]:
+    """Return attributes for trending sensor."""
+    trending = _trending_payload(data)
+    return {
+        "url": trending.get("url"),
+        "item_type": trending.get("item_type"),
+        "activity_score": trending.get("activity_score"),
+        "creation_date": trending.get("creation_date"),
+        "lookback_days": trending.get("lookback_days"),
+    }
+
+
 SENSOR_DESCRIPTIONS: tuple[GitHubSensorEntityDescription, ...] = (
     GitHubSensorEntityDescription(
         key="discussions_count",
@@ -311,6 +342,13 @@ SENSOR_DESCRIPTIONS: tuple[GitHubSensorEntityDescription, ...] = (
         },
     ),
     GitHubSensorEntityDescription(
+        key="trending_item",
+        translation_key="trending_item",
+        name="Trending item",
+        value_fn=_trending_state_value,
+        attr_fn=_trending_attributes,
+    ),
+    GitHubSensorEntityDescription(
         key="workflow_runs",
         translation_key="workflow_runs",
         name="Workflow runs",
@@ -399,6 +437,13 @@ class GitHubSensorEntity(CoordinatorEntity[GitHubDataUpdateCoordinator], SensorE
     @property
     def icon(self) -> str | None:
         """Return a dynamic icon for workflow sensors."""
+        if self.entity_description.key == "trending_item":
+            state = _trending_state_value(self.coordinator.data)
+            return (
+                TRENDING_ICON_ACTIVE
+                if state != TRENDING_NO_ACTIVITY
+                else TRENDING_ICON_INACTIVE
+            )
         if self.entity_description.key not in {
             "workflow_runs",
             "workflow_activity",

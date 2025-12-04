@@ -17,6 +17,7 @@ TEST_SENSOR_ENTITY = "sensor.octocat_hello_world_latest_release"
 WORKFLOW_SENSOR_ENTITY = "sensor.octocat_hello_world_workflow_runs"
 WORKFLOW_SUMMARY_SENSOR_ENTITY = "sensor.octocat_hello_world_workflow_summary"
 WORKFLOW_ACTIVITY_SENSOR_ENTITY = "sensor.octocat_hello_world_workflow_activity"
+TRENDING_SENSOR_ENTITY = "sensor.octocat_hello_world_trending_item"
 
 
 # This tests needs to be adjusted to remove lingering tasks
@@ -51,7 +52,10 @@ async def test_sensor_updates_with_empty_release_array(
         headers=headers,
     )
 
-    async_fire_time_changed(hass, dt_util.utcnow() + FALLBACK_UPDATE_INTERVAL)
+    coordinator = next(iter(init_integration.runtime_data.values()))
+    coordinator._last_trending_fetch = None
+
+    await coordinator.async_request_refresh()
     await hass.async_block_till_done()
 
     new_state = hass.states.get(TEST_SENSOR_ENTITY)
@@ -180,6 +184,60 @@ async def test_workflow_sensor_handles_missing_fields(
     assert attributes["latest_run_url"] == "unknown"
     assert attributes["run_id"] == "unknown"
     assert attributes["display_title"] == "Unknown Workflow"
+
+
+async def test_trending_sensor(
+    hass: HomeAssistant,
+    init_integration: MockConfigEntry,
+) -> None:
+    """Test trending sensor shows the most active issue/discussion."""
+    state = hass.states.get(TRENDING_SENSOR_ENTITY)
+    assert state
+    assert state.state == "Found a bug"
+    attributes = state.attributes
+    assert attributes["item_type"] == "issue"
+    assert attributes["activity_score"] == 10
+    assert attributes["creation_date"] == "2025-12-01T00:00:00Z"
+    assert attributes["lookback_days"] == 7
+    assert attributes["url"].endswith("/issues/1347")
+
+
+async def test_trending_sensor_handles_empty_results(
+    hass: HomeAssistant,
+    init_integration: MockConfigEntry,
+    aioclient_mock: AiohttpClientMocker,
+) -> None:
+    """Non-functional (N.TDI.03/N.TDI.04): Fallback when nothing is trending."""
+    headers = json.loads(await async_load_fixture(hass, "base_headers.json", DOMAIN))
+    response_json = json.loads(await async_load_fixture(hass, "graphql.json", DOMAIN))
+    response_json["data"]["trending_issue_search"]["nodes"] = []
+    response_json["data"]["repository"]["trending_discussions"]["nodes"] = []
+    aioclient_mock.clear_requests()
+    aioclient_mock.get(
+        f"https://api.github.com/repos/{TEST_REPOSITORY}/events",
+        json=[],
+        headers=headers,
+    )
+    aioclient_mock.get(
+        f"https://api.github.com/repos/{TEST_REPOSITORY}/actions/runs",
+        json=json.loads(await async_load_fixture(hass, "workflow_runs.json", DOMAIN)),
+        headers=headers,
+    )
+    aioclient_mock.post(
+        "https://api.github.com/graphql",
+        json=response_json,
+        headers=headers,
+    )
+
+    coordinator = next(iter(init_integration.runtime_data.values()))
+    coordinator._last_trending_fetch = None
+    await coordinator.async_request_refresh()
+
+    state = hass.states.get(TRENDING_SENSOR_ENTITY)
+    assert state.state == "No Trending Activity"
+    attributes = state.attributes
+    assert attributes["activity_score"] == 0
+    assert attributes["url"] is None
 
 
 async def test_workflow_runs_cached_on_etag(

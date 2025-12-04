@@ -37,6 +37,9 @@
       "subscribers_count": {
         "default": "mdi:glasses"
       },
+      "trending_item": {
+        "default": "mdi:fire"
+      },
       "workflow_runs": {
         "default": "mdi:progress-clock"
       },
