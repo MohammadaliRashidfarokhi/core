@@ -170,6 +170,7 @@ async def test_workflow_polling_interval_fast_option(
     aioclient_mock: AiohttpClientMocker,
 ) -> None:
     """Non-functional (N.WF.01): Selecting fast interval uses 5 minutes."""
+    mock_config_entry.add_to_hass(hass)
     hass.config_entries.async_update_entry(
         mock_config_entry,
         options={
@@ -177,6 +178,8 @@ async def test_workflow_polling_interval_fast_option(
             CONF_WORKFLOW_POLLING_INTERVAL: FAST_WORKFLOW_POLLING_INTERVAL_MINUTES,
         },
     )
-    await setup_github_integration(hass, mock_config_entry, aioclient_mock)
+    await setup_github_integration(
+        hass, mock_config_entry, aioclient_mock, add_entry_to_hass=False
+    )
     coordinator = next(iter(mock_config_entry.runtime_data.values()))
     assert coordinator.update_interval == FAST_UPDATE_INTERVAL
