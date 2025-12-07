@@ -9,11 +9,9 @@ import pytest
 from homeassistant import config_entries
 from homeassistant.components.github.config_flow import get_repositories
 from homeassistant.components.github.const import (
-    CONF_ISSUE_LABELS,
     CONF_REPOSITORIES,
     CONF_TRENDING_LOOKBACK_DAYS,
     CONF_WORKFLOW_POLLING_INTERVAL,
-    DEFAULT_ISSUE_LABELS,
     DEFAULT_REPOSITORIES,
     DEFAULT_TRENDING_LOOKBACK_DAYS,
     DEFAULT_WORKFLOW_POLLING_INTERVAL_MINUTES,
@@ -99,8 +97,6 @@ async def test_full_user_flow_implementation(
         result["options"][CONF_WORKFLOW_POLLING_INTERVAL]
         == DEFAULT_WORKFLOW_POLLING_INTERVAL_MINUTES
     )
-    assert result["options"][CONF_ISSUE_LABELS] == DEFAULT_ISSUE_LABELS
-    assert result["options"][CONF_ISSUE_LABELS] == DEFAULT_ISSUE_LABELS
 
 
 async def test_flow_with_registration_failure(
@@ -317,7 +313,6 @@ async def test_options_flow(
         result["flow_id"],
         user_input={
             CONF_REPOSITORIES: ["homeassistant/core"],
-            CONF_ISSUE_LABELS: "bug",
             CONF_TRENDING_LOOKBACK_DAYS: DEFAULT_TRENDING_LOOKBACK_DAYS,
             CONF_WORKFLOW_POLLING_INTERVAL: FAST_WORKFLOW_POLLING_INTERVAL_MINUTES,
         },
@@ -328,4 +323,3 @@ async def test_options_flow(
         result["data"][CONF_WORKFLOW_POLLING_INTERVAL]
         == FAST_WORKFLOW_POLLING_INTERVAL_MINUTES
     )
-    assert result["data"][CONF_ISSUE_LABELS] == ["bug"]

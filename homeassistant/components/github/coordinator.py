@@ -24,9 +24,7 @@ from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, Upda
 from homeassistant.util import dt as dt_util
 
 from .const import (
-    CONF_ISSUE_LABELS,
     CONF_TRENDING_LOOKBACK_DAYS,
-    DEFAULT_ISSUE_LABELS,
     DEFAULT_TRENDING_LOOKBACK_DAYS,
     LOGGER,
     REFRESH_EVENT_TYPES,
@@ -186,9 +184,6 @@ class GitHubDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._trending_lookback_days = config_entry.options.get(
             CONF_TRENDING_LOOKBACK_DAYS, DEFAULT_TRENDING_LOOKBACK_DAYS
         )
-        self._issue_labels: list[str] = config_entry.options.get(
-            CONF_ISSUE_LABELS, DEFAULT_ISSUE_LABELS
-        )
 
         super().__init__(
             hass,
@@ -230,7 +225,6 @@ class GitHubDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             response.data["data"],
             lookback_start,
         )
-        repository_data["label_issues"] = await self._async_label_issues()
         return repository_data
 
     async def _async_workflow_runs(self) -> dict[str, Any]:
@@ -352,41 +346,6 @@ class GitHubDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._trending_data = trending
         self._last_trending_fetch = now
         return trending
-
-    async def _async_label_issues(self) -> dict[str, Any]:
-        """Fetch open issue counts for configured labels."""
-        if not self._issue_labels:
-            return {}
-
-        headers = {
-            "Accept": "application/vnd.github+json",
-            "Authorization": f"Bearer {self._access_token}",
-            "User-Agent": SERVER_SOFTWARE,
-            "X-GitHub-Api-Version": "2022-11-28",
-        }
-        results: dict[str, Any] = {}
-        for label in self._issue_labels:
-            query = f'repo:{self.repository} state:open type:issue label:"{label}"'
-            params: list[tuple[str, str]] = [("q", query), ("per_page", "50")]
-            async with self._session.get(
-                "https://api.github.com/search/issues", headers=headers, params=params
-            ) as response:
-                response.raise_for_status()
-                payload = await response.json()
-            items = payload.get("items", [])
-            issues = [
-                {
-                    "number": item.get("number"),
-                    "url": item.get("html_url"),
-                }
-                for item in items
-            ]
-            results[label.lower()] = {
-                "count": payload.get("total_count", 0),
-                "issues": issues,
-                "last_checked": dt_util.utcnow().isoformat(),
-            }
-        return results
 
     def _workflow_headers(self, *, include_etag: bool) -> dict[str, str]:
         """Return headers for workflow run requests."""

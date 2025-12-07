@@ -6,11 +6,9 @@ from unittest.mock import patch
 import pytest
 
 from homeassistant.components.github.const import (
-    CONF_ISSUE_LABELS,
     CONF_REPOSITORIES,
     CONF_TRENDING_LOOKBACK_DAYS,
     CONF_WORKFLOW_POLLING_INTERVAL,
-    DEFAULT_ISSUE_LABELS,
     DEFAULT_TRENDING_LOOKBACK_DAYS,
     DEFAULT_WORKFLOW_POLLING_INTERVAL_MINUTES,
     DOMAIN,
@@ -35,7 +33,6 @@ def mock_config_entry() -> MockConfigEntry:
             CONF_REPOSITORIES: [TEST_REPOSITORY],
             CONF_WORKFLOW_POLLING_INTERVAL: DEFAULT_WORKFLOW_POLLING_INTERVAL_MINUTES,
             CONF_TRENDING_LOOKBACK_DAYS: DEFAULT_TRENDING_LOOKBACK_DAYS,
-            CONF_ISSUE_LABELS: DEFAULT_ISSUE_LABELS or ["bug"],
         },
     )
 

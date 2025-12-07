@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
-import re
 from typing import Any
 
 from homeassistant.components.sensor import (
@@ -19,7 +18,7 @@ from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 from homeassistant.helpers.typing import StateType
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .const import CONF_ISSUE_LABELS, DOMAIN
+from .const import DOMAIN
 from .coordinator import GithubConfigEntry, GitHubDataUpdateCoordinator
 
 WORKFLOW_STATUS_SUCCESS = "success"
@@ -241,19 +240,6 @@ def _trending_attributes(data: dict[str, Any]) -> Mapping[str, Any]:
     }
 
 
-def _label_slug(label: str) -> str:
-    """Return slugified label for unique IDs."""
-    return re.sub(r"[^a-z0-9_]", "_", label.lower())
-
-
-def _label_issue_data(data: dict[str, Any], label: str) -> dict[str, Any] | None:
-    """Return label issue payload."""
-    labels = data.get("label_issues")
-    if isinstance(labels, dict):
-        return labels.get(label.lower())
-    return None
-
-
 SENSOR_DESCRIPTIONS: tuple[GitHubSensorEntityDescription, ...] = (
     GitHubSensorEntityDescription(
         key="discussions_count",
@@ -393,16 +379,13 @@ async def async_setup_entry(
 ) -> None:
     """Set up GitHub sensor based on a config entry."""
     repositories = entry.runtime_data
-    labels: list[str] = entry.options.get(CONF_ISSUE_LABELS, [])
-    entities: list[SensorEntity] = []
-    for coordinator in repositories.values():
-        entities.extend(
+    async_add_entities(
+        (
             GitHubSensorEntity(coordinator, description)
             for description in SENSOR_DESCRIPTIONS
-        )
-        entities.extend(GitHubLabelIssueSensor(coordinator, label) for label in labels)
-
-    async_add_entities(entities)
+            for coordinator in repositories.values()
+        ),
+    )
 
 
 class GitHubSensorEntity(CoordinatorEntity[GitHubDataUpdateCoordinator], SensorEntity):
@@ -468,56 +451,3 @@ class GitHubSensorEntity(CoordinatorEntity[GitHubDataUpdateCoordinator], SensorE
             return super().icon
         status = _workflow_status(self.coordinator.data)
         return WORKFLOW_ICON_MAP.get(status, "mdi:progress-question")
-
-
-class GitHubLabelIssueSensor(
-    CoordinatorEntity[GitHubDataUpdateCoordinator], SensorEntity
-):
-    """Sensor for issue counts per label."""
-
-    _attr_has_entity_name = True
-    _attr_icon = "mdi:tag-multiple"
-
-    def __init__(self, coordinator: GitHubDataUpdateCoordinator, label: str) -> None:
-        """Initialize label issue sensor."""
-        super().__init__(coordinator=coordinator)
-        self._label = label
-        slug = _label_slug(label)
-        repo = coordinator.repository
-        self._attr_unique_id = f"{coordinator.data.get('id')}_label_{slug}"
-        self._attr_name = f"{label} issues"
-        self._attr_device_info = DeviceInfo(
-            identifiers={(DOMAIN, repo)},
-            name=coordinator.data.get("full_name"),
-            manufacturer="GitHub",
-            configuration_url=f"https://github.com/{repo}",
-            entry_type=DeviceEntryType.SERVICE,
-        )
-
-    @property
-    def available(self) -> bool:
-        """Return True if label data is available."""
-        return (
-            super().available
-            and _label_issue_data(self.coordinator.data, self._label) is not None
-        )
-
-    @property
-    def native_value(self) -> StateType:
-        """Return open issue count for label."""
-        data = _label_issue_data(self.coordinator.data, self._label)
-        if not data:
-            return None
-        return data.get("count")
-
-    @property
-    def extra_state_attributes(self) -> Mapping[str, Any] | None:
-        """Return issue list and metadata."""
-        data = _label_issue_data(self.coordinator.data, self._label)
-        if not data:
-            return None
-        return {
-            "issues": data.get("issues", []),
-            "last_checked": data.get("last_checked"),
-            "label": self._label,
-        }

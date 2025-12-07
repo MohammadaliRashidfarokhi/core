@@ -155,8 +155,7 @@ async def test_sensor_icons(
 
     icons = await icon.async_get_icons(hass, "entity", integrations=["github"])
     for entity in entities:
-        if entity.translation_key is None:
-            continue
+        assert entity.translation_key is not None
         assert icons["github"]["sensor"][entity.translation_key] is not None
 
 

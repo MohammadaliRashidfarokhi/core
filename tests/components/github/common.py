@@ -26,9 +26,6 @@ async def setup_github_integration(
     workflow_runs = json.loads(
         await async_load_fixture(hass, "workflow_runs.json", DOMAIN)
     )
-    label_search = json.loads(
-        await async_load_fixture(hass, "label_search_bug.json", DOMAIN)
-    )
     for idx, repository in enumerate(mock_config_entry.options[CONF_REPOSITORIES]):
         aioclient_mock.get(
             f"https://api.github.com/repos/{repository}",
@@ -42,15 +39,6 @@ async def setup_github_integration(
         aioclient_mock.get(
             f"https://api.github.com/repos/{repository}/events",
             json=[],
-            headers=headers,
-        )
-        aioclient_mock.get(
-            "https://api.github.com/search/issues",
-            params={
-                "q": f'repo:{repository} state:open type:issue label:"bug"',
-                "per_page": 50,
-            },
-            json=label_search,
             headers=headers,
         )
         aioclient_mock.get(
