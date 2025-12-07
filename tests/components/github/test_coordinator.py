@@ -1,6 +1,6 @@
 """Tests for GitHub coordinator."""
 
-from datetime import timedelta
+from datetime import UTC, datetime, timedelta
 from unittest.mock import AsyncMock, patch
 
 from aiogithubapi import (
@@ -256,3 +256,59 @@ async def test_async_workflow_runs_valueerror_fallback(
 
     result = await coordinator._async_workflow_runs()
     assert result == {"recent_runs": [{"id": 99}]}
+
+
+@pytest.mark.asyncio
+async def test_trending_items_full_coverage(
+    hass: HomeAssistant, mock_config_entry
+) -> None:
+    """Cover issue/discussion loops, type filtering, date filtering."""
+
+    coordinator = make_coordinator(hass, mock_config_entry)
+
+    now = datetime.now(UTC)
+    recent = (now - timedelta(days=1)).isoformat()
+    old = (now - timedelta(days=30)).isoformat()
+
+    # Issues and discussions as the algorithm expects
+    issues = [
+        {"__typename": "PullRequest", "updatedAt": recent},  # skipped
+        {"__typename": "Issue", "updatedAt": old},  # skipped (old)
+        {
+            "__typename": "Issue",
+            "updatedAt": recent,
+            "id": "i1",
+            "title": "Issue 1",
+            "url": "http://example/issue1",
+            "comments": {"totalCount": 2},
+            "reactions": {"totalCount": 3},
+        },
+    ]
+
+    discussions = [
+        {
+            "updatedAt": recent,
+            "id": "d1",
+            "title": "Discussion 1",
+            "url": "http://example/dis1",
+            "comments": {"totalCount": 1},
+            "reactions": {"totalCount": 1},
+        },
+    ]
+
+    # Build minimal GraphQL-like payload for _build_trending_data
+    graph_data = {
+        "trending_issue_search": {"nodes": issues},
+        "repository": {"trending_discussions": {"nodes": discussions}},
+    }
+
+    lookback_start = now - timedelta(days=7)
+
+    trending = coordinator._build_trending_data(graph_data, lookback_start)
+
+    # Verify highest activity item selected (issue has score 5 > discussion 2)
+    assert trending["item_type"] == "issue"
+    assert trending["title"] == "Issue 1"
+    assert trending["url"] == "http://example/issue1"
+    assert trending["activity_score"] == 5
+    assert trending["lookback_days"] == coordinator._trending_lookback_days
