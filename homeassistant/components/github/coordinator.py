@@ -297,11 +297,13 @@ class GitHubDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         issue_nodes = issue_search.get("nodes") or []
 
         def _parse_datetime(value: str | None) -> datetime | None:
+            """Return parsed datetime from an ISO formatted string."""
             if not value:
                 return None
             return dt_util.parse_datetime(value)
 
         def _score_item(item: dict[str, Any], *, item_type: str) -> dict[str, Any]:
+            """Return trending item metadata with computed activity score."""
             comments = item.get("comments", {}).get("totalCount") or 0
             reactions = item.get("reactions", {}).get("totalCount") or 0
             updated_at = _parse_datetime(item.get("updatedAt"))

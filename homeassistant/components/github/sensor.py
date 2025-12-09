@@ -1,4 +1,4 @@
-"""Sensor platform for the GitHub integration."""
+"""Sensor platform for the GitHub integration, including issue dashboard, trending activity, and workflow views."""
 
 from __future__ import annotations
 
@@ -85,7 +85,7 @@ def _latest_workflow_run(data: dict[str, Any]) -> dict[str, Any] | None:
 
 
 def _workflow_summary_value(data: dict[str, Any]) -> str:
-    """Return workflow summary sensor value."""
+    """Return the display value for the workflow summary sensor used in the workflow activity view."""
     latest_run = _latest_workflow_run(data)
     if not latest_run:
         return WORKFLOW_NO_ACTIVITY
@@ -118,7 +118,7 @@ def _normalize_workflow_status(run: dict[str, Any]) -> str:
 
 
 def _workflow_state_value(data: dict[str, Any]) -> str:
-    """Return sensor state representing workflow runs."""
+    """Return the workflow runs sensor state showing the latest title plus status."""
     latest_run = _latest_workflow_run(data)
     if not latest_run:
         return WORKFLOW_NO_ACTIVITY
@@ -127,7 +127,7 @@ def _workflow_state_value(data: dict[str, Any]) -> str:
 
 
 def _workflow_activity_value(data: dict[str, Any]) -> str:
-    """Return workflow activity status."""
+    """Return the normalized status string used by the workflow activity sensor."""
     latest_run = _latest_workflow_run(data)
     if not latest_run:
         return WORKFLOW_STATUS_UNKNOWN
@@ -168,7 +168,7 @@ def _workflow_counts(runs: list[dict[str, Any]]) -> dict[str, int]:
 
 
 def _workflow_attributes(data: dict[str, Any]) -> Mapping[str, Any]:
-    """Return workflow sensor attributes."""
+    """Return workflow sensor attributes that power the workflow activity view."""
     runs = _workflow_runs(data)
     latest_run = runs[0] if runs else None
     attributes: dict[str, Any] = {
@@ -214,7 +214,7 @@ def _workflow_status(data: dict[str, Any]) -> str:
 
 
 def _trending_payload(data: dict[str, Any]) -> dict[str, Any]:
-    """Return trending payload from coordinator data."""
+    """Return the cached trending issue/discussion payload from the coordinator data."""
     trending = data.get("trending")
     if isinstance(trending, dict):
         return trending
@@ -222,7 +222,7 @@ def _trending_payload(data: dict[str, Any]) -> dict[str, Any]:
 
 
 def _trending_state_value(data: dict[str, Any]) -> str:
-    """Return title of the trending issue/discussion."""
+    """Return the title shown by the trending issue/discussion sensor."""
     trending = _trending_payload(data)
     if not trending.get("title"):
         return TRENDING_NO_ACTIVITY
@@ -230,7 +230,7 @@ def _trending_state_value(data: dict[str, Any]) -> str:
 
 
 def _trending_attributes(data: dict[str, Any]) -> Mapping[str, Any]:
-    """Return attributes for trending sensor."""
+    """Return metadata attributes for the trending activity sensor."""
     trending = _trending_payload(data)
     return {
         "url": trending.get("url"),
@@ -242,12 +242,12 @@ def _trending_attributes(data: dict[str, Any]) -> Mapping[str, Any]:
 
 
 def _label_slug(label: str) -> str:
-    """Return slugified label for unique IDs."""
+    """Return slugified label used for unique IDs on the per-label issue dashboard."""
     return re.sub(r"[^a-z0-9_]", "_", label.lower())
 
 
 def _label_issue_data(data: dict[str, Any], label: str) -> dict[str, Any] | None:
-    """Return label issue payload."""
+    """Return the issue payload stored for a specific label to support the issue dashboard."""
     labels = data.get("label_issues")
     if isinstance(labels, dict):
         return labels.get(label.lower())
@@ -391,7 +391,7 @@ async def async_setup_entry(
     entry: GithubConfigEntry,
     async_add_entities: AddConfigEntryEntitiesCallback,
 ) -> None:
-    """Set up GitHub sensor based on a config entry."""
+    """Set up GitHub sensors (standard, workflow, trending, and label dashboards) from a config entry."""
     repositories = entry.runtime_data
     labels: list[str] = entry.options.get(CONF_ISSUE_LABELS, [])
     entities: list[SensorEntity] = []
@@ -406,7 +406,7 @@ async def async_setup_entry(
 
 
 class GitHubSensorEntity(CoordinatorEntity[GitHubDataUpdateCoordinator], SensorEntity):
-    """Defines a GitHub sensor entity."""
+    """Defines a GitHub sensor entity for trending and workflow data."""
 
     _attr_attribution = "Data provided by the GitHub API"
     _attr_has_entity_name = True
@@ -453,7 +453,7 @@ class GitHubSensorEntity(CoordinatorEntity[GitHubDataUpdateCoordinator], SensorE
 
     @property
     def icon(self) -> str | None:
-        """Return a dynamic icon for workflow sensors."""
+        """Return a dynamic icon for the trending item and workflow sensors."""
         if self.entity_description.key == "trending_item":
             state = _trending_state_value(self.coordinator.data)
             return (
@@ -473,13 +473,13 @@ class GitHubSensorEntity(CoordinatorEntity[GitHubDataUpdateCoordinator], SensorE
 class GitHubLabelIssueSensor(
     CoordinatorEntity[GitHubDataUpdateCoordinator], SensorEntity
 ):
-    """Sensor for issue counts per label."""
+    """Sensor that powers the per-label issue dashboard."""
 
     _attr_has_entity_name = True
     _attr_icon = "mdi:tag-multiple"
 
     def __init__(self, coordinator: GitHubDataUpdateCoordinator, label: str) -> None:
-        """Initialize label issue sensor."""
+        """Initialize label issue sensor used by the issue dashboard."""
         super().__init__(coordinator=coordinator)
         self._label = label
         slug = _label_slug(label)
@@ -496,7 +496,7 @@ class GitHubLabelIssueSensor(
 
     @property
     def available(self) -> bool:
-        """Return True if label data is available."""
+        """Return True when data for the configured label is available."""
         return (
             super().available
             and _label_issue_data(self.coordinator.data, self._label) is not None
@@ -504,7 +504,7 @@ class GitHubLabelIssueSensor(
 
     @property
     def native_value(self) -> StateType:
-        """Return open issue count for label."""
+        """Return the open issue count used on the issue dashboard."""
         data = _label_issue_data(self.coordinator.data, self._label)
         if not data:
             return None
@@ -512,7 +512,7 @@ class GitHubLabelIssueSensor(
 
     @property
     def extra_state_attributes(self) -> Mapping[str, Any] | None:
-        """Return issue list and metadata."""
+        """Return the issue list and metadata displayed on the issue dashboard."""
         data = _label_issue_data(self.coordinator.data, self._label)
         if not data:
             return None
