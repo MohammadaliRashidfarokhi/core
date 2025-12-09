@@ -9,9 +9,16 @@ import pytest
 from homeassistant import config_entries
 from homeassistant.components.github.config_flow import get_repositories
 from homeassistant.components.github.const import (
+    CONF_ISSUE_LABELS,
     CONF_REPOSITORIES,
+    CONF_TRENDING_LOOKBACK_DAYS,
+    CONF_WORKFLOW_POLLING_INTERVAL,
+    DEFAULT_ISSUE_LABELS,
     DEFAULT_REPOSITORIES,
+    DEFAULT_TRENDING_LOOKBACK_DAYS,
+    DEFAULT_WORKFLOW_POLLING_INTERVAL_MINUTES,
     DOMAIN,
+    FAST_WORKFLOW_POLLING_INTERVAL_MINUTES,
 )
 from homeassistant.const import CONF_ACCESS_TOKEN
 from homeassistant.core import HomeAssistant
@@ -85,6 +92,15 @@ async def test_full_user_flow_implementation(
     assert result["data"][CONF_ACCESS_TOKEN] == MOCK_ACCESS_TOKEN
     assert "options" in result
     assert result["options"][CONF_REPOSITORIES] == DEFAULT_REPOSITORIES
+    assert (
+        result["options"][CONF_TRENDING_LOOKBACK_DAYS] == DEFAULT_TRENDING_LOOKBACK_DAYS
+    )
+    assert (
+        result["options"][CONF_WORKFLOW_POLLING_INTERVAL]
+        == DEFAULT_WORKFLOW_POLLING_INTERVAL_MINUTES
+    )
+    assert result["options"][CONF_ISSUE_LABELS] == DEFAULT_ISSUE_LABELS
+    assert result["options"][CONF_ISSUE_LABELS] == DEFAULT_ISSUE_LABELS
 
 
 async def test_flow_with_registration_failure(
@@ -284,7 +300,8 @@ async def test_options_flow(
     hass.config_entries.async_update_entry(
         mock_config_entry,
         options={
-            CONF_REPOSITORIES: ["homeassistant/core", "homeassistant/architecture"]
+            CONF_REPOSITORIES: ["homeassistant/core", "homeassistant/architecture"],
+            CONF_WORKFLOW_POLLING_INTERVAL: DEFAULT_WORKFLOW_POLLING_INTERVAL_MINUTES,
         },
     )
 
@@ -298,7 +315,17 @@ async def test_options_flow(
 
     result = await hass.config_entries.options.async_configure(
         result["flow_id"],
-        user_input={CONF_REPOSITORIES: ["homeassistant/core"]},
+        user_input={
+            CONF_REPOSITORIES: ["homeassistant/core"],
+            CONF_ISSUE_LABELS: "bug",
+            CONF_TRENDING_LOOKBACK_DAYS: DEFAULT_TRENDING_LOOKBACK_DAYS,
+            CONF_WORKFLOW_POLLING_INTERVAL: FAST_WORKFLOW_POLLING_INTERVAL_MINUTES,
+        },
     )
 
     assert "homeassistant/architecture" not in result["data"][CONF_REPOSITORIES]
+    assert (
+        result["data"][CONF_WORKFLOW_POLLING_INTERVAL]
+        == FAST_WORKFLOW_POLLING_INTERVAL_MINUTES
+    )
+    assert result["data"][CONF_ISSUE_LABELS] == ["bug"]

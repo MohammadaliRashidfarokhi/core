@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from datetime import timedelta
+
 from aiogithubapi import GitHubAPI
 
 from homeassistant.const import CONF_ACCESS_TOKEN, Platform
@@ -12,17 +14,37 @@ from homeassistant.helpers.aiohttp_client import (
     async_get_clientsession,
 )
 
-from .const import CONF_REPOSITORIES, DOMAIN, LOGGER
+from .const import (
+    CONF_REPOSITORIES,
+    CONF_WORKFLOW_POLLING_INTERVAL,
+    DEFAULT_WORKFLOW_POLLING_INTERVAL_MINUTES,
+    DOMAIN,
+    FALLBACK_UPDATE_INTERVAL,
+    FAST_UPDATE_INTERVAL,
+    FAST_WORKFLOW_POLLING_INTERVAL_MINUTES,
+    LOGGER,
+)
 from .coordinator import GithubConfigEntry, GitHubDataUpdateCoordinator
 
 PLATFORMS: list[Platform] = [Platform.SENSOR]
 
 
+def _workflow_update_interval(entry: GithubConfigEntry) -> timedelta:
+    """Return configured workflow polling interval."""
+    minutes = entry.options.get(
+        CONF_WORKFLOW_POLLING_INTERVAL, DEFAULT_WORKFLOW_POLLING_INTERVAL_MINUTES
+    )
+    if minutes <= FAST_WORKFLOW_POLLING_INTERVAL_MINUTES:
+        return FAST_UPDATE_INTERVAL
+    return FALLBACK_UPDATE_INTERVAL
+
+
 async def async_setup_entry(hass: HomeAssistant, entry: GithubConfigEntry) -> bool:
     """Set up GitHub from a config entry."""
+    session = async_get_clientsession(hass)
     client = GitHubAPI(
         token=entry.data[CONF_ACCESS_TOKEN],
-        session=async_get_clientsession(hass),
+        session=session,
         client_name=SERVER_SOFTWARE,
     )
 
@@ -35,6 +57,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: GithubConfigEntry) -> bo
             config_entry=entry,
             client=client,
             repository=repository,
+            session=session,
+            access_token=entry.data[CONF_ACCESS_TOKEN],
+            update_interval=_workflow_update_interval(entry),
         )
 
         await coordinator.async_config_entry_first_refresh()

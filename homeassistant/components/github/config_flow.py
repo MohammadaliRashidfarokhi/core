@@ -29,7 +29,21 @@ from homeassistant.helpers.aiohttp_client import (
     async_get_clientsession,
 )
 
-from .const import CLIENT_ID, CONF_REPOSITORIES, DEFAULT_REPOSITORIES, DOMAIN, LOGGER
+from .const import (
+    CLIENT_ID,
+    CONF_ISSUE_LABELS,
+    CONF_REPOSITORIES,
+    CONF_TRENDING_LOOKBACK_DAYS,
+    CONF_WORKFLOW_POLLING_INTERVAL,
+    DEFAULT_ISSUE_LABELS,
+    DEFAULT_REPOSITORIES,
+    DEFAULT_TRENDING_LOOKBACK_DAYS,
+    DEFAULT_WORKFLOW_POLLING_INTERVAL_MINUTES,
+    DOMAIN,
+    FAST_WORKFLOW_POLLING_INTERVAL_MINUTES,
+    LOGGER,
+    TRENDING_LOOKBACK_OPTIONS,
+)
 
 
 async def get_repositories(hass: HomeAssistant, access_token: str) -> list[str]:
@@ -195,7 +209,12 @@ class GitHubConfigFlow(ConfigFlow, domain=DOMAIN):
         return self.async_create_entry(
             title="",
             data={CONF_ACCESS_TOKEN: self._login.access_token},
-            options={CONF_REPOSITORIES: user_input[CONF_REPOSITORIES]},
+            options={
+                CONF_REPOSITORIES: user_input[CONF_REPOSITORIES],
+                CONF_WORKFLOW_POLLING_INTERVAL: DEFAULT_WORKFLOW_POLLING_INTERVAL_MINUTES,
+                CONF_TRENDING_LOOKBACK_DAYS: DEFAULT_TRENDING_LOOKBACK_DAYS,
+                CONF_ISSUE_LABELS: DEFAULT_ISSUE_LABELS,
+            },
         )
 
     async def async_step_could_not_register(
@@ -226,6 +245,16 @@ class OptionsFlowHandler(OptionsFlowWithReload):
             configured_repositories: list[str] = self.config_entry.options[
                 CONF_REPOSITORIES
             ]
+            polling_interval = self.config_entry.options.get(
+                CONF_WORKFLOW_POLLING_INTERVAL,
+                DEFAULT_WORKFLOW_POLLING_INTERVAL_MINUTES,
+            )
+            trending_lookback = self.config_entry.options.get(
+                CONF_TRENDING_LOOKBACK_DAYS, DEFAULT_TRENDING_LOOKBACK_DAYS
+            )
+            existing_labels: list[str] = self.config_entry.options.get(
+                CONF_ISSUE_LABELS, DEFAULT_ISSUE_LABELS
+            )
             repositories = await get_repositories(
                 self.hass, self.config_entry.data[CONF_ACCESS_TOKEN]
             )
@@ -243,8 +272,35 @@ class OptionsFlowHandler(OptionsFlowWithReload):
                             CONF_REPOSITORIES,
                             default=configured_repositories,
                         ): cv.multi_select({k: k for k in repositories}),
+                        vol.Optional(
+                            CONF_ISSUE_LABELS,
+                            default=", ".join(existing_labels),
+                        ): cv.string,
+                        vol.Required(
+                            CONF_TRENDING_LOOKBACK_DAYS,
+                            default=trending_lookback,
+                        ): vol.In(TRENDING_LOOKBACK_OPTIONS),
+                        vol.Required(
+                            CONF_WORKFLOW_POLLING_INTERVAL,
+                            default=polling_interval,
+                        ): vol.In(
+                            [
+                                DEFAULT_WORKFLOW_POLLING_INTERVAL_MINUTES,
+                                FAST_WORKFLOW_POLLING_INTERVAL_MINUTES,
+                            ]
+                        ),
                     }
                 ),
             )
 
+        labels = self._parse_labels(user_input.get(CONF_ISSUE_LABELS))
+        user_input[CONF_ISSUE_LABELS] = labels
+
         return self.async_create_entry(title="", data=user_input)
+
+    @staticmethod
+    def _parse_labels(text: str | None) -> list[str]:
+        """Return parsed label list from comma separated string."""
+        if not text:
+            return []
+        return [label.strip() for label in text.split(",") if label.strip()]
