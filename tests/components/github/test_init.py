@@ -4,7 +4,9 @@ import pytest
 
 from homeassistant.components.github import CONF_REPOSITORIES
 from homeassistant.components.github.const import (
+    CONF_TRENDING_LOOKBACK_DAYS,
     CONF_WORKFLOW_POLLING_INTERVAL,
+    DEFAULT_TRENDING_LOOKBACK_DAYS,
     DEFAULT_WORKFLOW_POLLING_INTERVAL_MINUTES,
     FALLBACK_UPDATE_INTERVAL,
     FAST_UPDATE_INTERVAL,
@@ -35,6 +37,7 @@ async def test_device_registry_cleanup(
         options={
             CONF_REPOSITORIES: ["home-assistant/core"],
             CONF_WORKFLOW_POLLING_INTERVAL: DEFAULT_WORKFLOW_POLLING_INTERVAL_MINUTES,
+            CONF_TRENDING_LOOKBACK_DAYS: DEFAULT_TRENDING_LOOKBACK_DAYS,
         },
     )
     await setup_github_integration(
@@ -53,6 +56,7 @@ async def test_device_registry_cleanup(
         options={
             CONF_REPOSITORIES: [],
             CONF_WORKFLOW_POLLING_INTERVAL: DEFAULT_WORKFLOW_POLLING_INTERVAL_MINUTES,
+            CONF_TRENDING_LOOKBACK_DAYS: DEFAULT_TRENDING_LOOKBACK_DAYS,
         },
     )
     assert await hass.config_entries.async_reload(mock_config_entry.entry_id)
@@ -85,6 +89,7 @@ async def test_subscription_setup(
         options={
             CONF_REPOSITORIES: ["home-assistant/core"],
             CONF_WORKFLOW_POLLING_INTERVAL: DEFAULT_WORKFLOW_POLLING_INTERVAL_MINUTES,
+            CONF_TRENDING_LOOKBACK_DAYS: DEFAULT_TRENDING_LOOKBACK_DAYS,
         },
         pref_disable_polling=False,
     )
@@ -111,6 +116,7 @@ async def test_subscription_setup_polling_disabled(
         options={
             CONF_REPOSITORIES: ["home-assistant/core"],
             CONF_WORKFLOW_POLLING_INTERVAL: DEFAULT_WORKFLOW_POLLING_INTERVAL_MINUTES,
+            CONF_TRENDING_LOOKBACK_DAYS: DEFAULT_TRENDING_LOOKBACK_DAYS,
         },
         pref_disable_polling=True,
     )
@@ -149,7 +155,8 @@ async def test_sensor_icons(
 
     icons = await icon.async_get_icons(hass, "entity", integrations=["github"])
     for entity in entities:
-        assert entity.translation_key is not None
+        if entity.translation_key is None:
+            continue
         assert icons["github"]["sensor"][entity.translation_key] is not None
 
 

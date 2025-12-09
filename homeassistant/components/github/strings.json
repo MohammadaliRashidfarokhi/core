@@ -60,6 +60,9 @@
         "name": "Watchers",
         "unit_of_measurement": "watchers"
       },
+      "trending_item": {
+        "name": "Trending item"
+      },
       "workflow_runs": {
         "name": "Workflow runs"
       },

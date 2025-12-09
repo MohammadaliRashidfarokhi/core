@@ -31,13 +31,18 @@ from homeassistant.helpers.aiohttp_client import (
 
 from .const import (
     CLIENT_ID,
+    CONF_ISSUE_LABELS,
     CONF_REPOSITORIES,
+    CONF_TRENDING_LOOKBACK_DAYS,
     CONF_WORKFLOW_POLLING_INTERVAL,
+    DEFAULT_ISSUE_LABELS,
     DEFAULT_REPOSITORIES,
+    DEFAULT_TRENDING_LOOKBACK_DAYS,
     DEFAULT_WORKFLOW_POLLING_INTERVAL_MINUTES,
     DOMAIN,
     FAST_WORKFLOW_POLLING_INTERVAL_MINUTES,
     LOGGER,
+    TRENDING_LOOKBACK_OPTIONS,
 )
 
 
@@ -207,6 +212,8 @@ class GitHubConfigFlow(ConfigFlow, domain=DOMAIN):
             options={
                 CONF_REPOSITORIES: user_input[CONF_REPOSITORIES],
                 CONF_WORKFLOW_POLLING_INTERVAL: DEFAULT_WORKFLOW_POLLING_INTERVAL_MINUTES,
+                CONF_TRENDING_LOOKBACK_DAYS: DEFAULT_TRENDING_LOOKBACK_DAYS,
+                CONF_ISSUE_LABELS: DEFAULT_ISSUE_LABELS,
             },
         )
 
@@ -242,6 +249,12 @@ class OptionsFlowHandler(OptionsFlowWithReload):
                 CONF_WORKFLOW_POLLING_INTERVAL,
                 DEFAULT_WORKFLOW_POLLING_INTERVAL_MINUTES,
             )
+            trending_lookback = self.config_entry.options.get(
+                CONF_TRENDING_LOOKBACK_DAYS, DEFAULT_TRENDING_LOOKBACK_DAYS
+            )
+            existing_labels: list[str] = self.config_entry.options.get(
+                CONF_ISSUE_LABELS, DEFAULT_ISSUE_LABELS
+            )
             repositories = await get_repositories(
                 self.hass, self.config_entry.data[CONF_ACCESS_TOKEN]
             )
@@ -259,6 +272,14 @@ class OptionsFlowHandler(OptionsFlowWithReload):
                             CONF_REPOSITORIES,
                             default=configured_repositories,
                         ): cv.multi_select({k: k for k in repositories}),
+                        vol.Optional(
+                            CONF_ISSUE_LABELS,
+                            default=", ".join(existing_labels),
+                        ): cv.string,
+                        vol.Required(
+                            CONF_TRENDING_LOOKBACK_DAYS,
+                            default=trending_lookback,
+                        ): vol.In(TRENDING_LOOKBACK_OPTIONS),
                         vol.Required(
                             CONF_WORKFLOW_POLLING_INTERVAL,
                             default=polling_interval,
@@ -272,4 +293,14 @@ class OptionsFlowHandler(OptionsFlowWithReload):
                 ),
             )
 
+        labels = self._parse_labels(user_input.get(CONF_ISSUE_LABELS))
+        user_input[CONF_ISSUE_LABELS] = labels
+
         return self.async_create_entry(title="", data=user_input)
+
+    @staticmethod
+    def _parse_labels(text: str | None) -> list[str]:
+        """Return parsed label list from comma separated string."""
+        if not text:
+            return []
+        return [label.strip() for label in text.split(",") if label.strip()]

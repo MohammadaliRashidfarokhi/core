@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
+import re
 from typing import Any
 
 from homeassistant.components.sensor import (
@@ -18,7 +19,7 @@ from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 from homeassistant.helpers.typing import StateType
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .const import DOMAIN
+from .const import CONF_ISSUE_LABELS, DOMAIN
 from .coordinator import GithubConfigEntry, GitHubDataUpdateCoordinator
 
 WORKFLOW_STATUS_SUCCESS = "success"
@@ -26,6 +27,7 @@ WORKFLOW_STATUS_FAILURE = "failure"
 WORKFLOW_STATUS_IN_PROGRESS = "in_progress"
 WORKFLOW_STATUS_UNKNOWN = "unknown"
 WORKFLOW_NO_ACTIVITY = "No Workflow Activity"
+TRENDING_NO_ACTIVITY = "No Trending Activity"
 WORKFLOW_STATUS_PROGRESS_STATES = {"queued", "in_progress", "pending", "waiting"}
 WORKFLOW_STATUS_FAILURE_STATES = {
     "failure",
@@ -43,6 +45,8 @@ WORKFLOW_ICON_MAP = {
     WORKFLOW_STATUS_IN_PROGRESS: "mdi:progress-clock",
     "skipped": "mdi:skip-forward",
 }
+TRENDING_ICON_ACTIVE = "mdi:fire"
+TRENDING_ICON_INACTIVE = "mdi:fire-off"
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -209,6 +213,47 @@ def _workflow_status(data: dict[str, Any]) -> str:
     return _normalize_workflow_status(latest_run)
 
 
+def _trending_payload(data: dict[str, Any]) -> dict[str, Any]:
+    """Return trending payload from coordinator data."""
+    trending = data.get("trending")
+    if isinstance(trending, dict):
+        return trending
+    return {}
+
+
+def _trending_state_value(data: dict[str, Any]) -> str:
+    """Return title of the trending issue/discussion."""
+    trending = _trending_payload(data)
+    if not trending.get("title"):
+        return TRENDING_NO_ACTIVITY
+    return str(trending["title"])[:255]
+
+
+def _trending_attributes(data: dict[str, Any]) -> Mapping[str, Any]:
+    """Return attributes for trending sensor."""
+    trending = _trending_payload(data)
+    return {
+        "url": trending.get("url"),
+        "item_type": trending.get("item_type"),
+        "activity_score": trending.get("activity_score"),
+        "creation_date": trending.get("creation_date"),
+        "lookback_days": trending.get("lookback_days"),
+    }
+
+
+def _label_slug(label: str) -> str:
+    """Return slugified label for unique IDs."""
+    return re.sub(r"[^a-z0-9_]", "_", label.lower())
+
+
+def _label_issue_data(data: dict[str, Any], label: str) -> dict[str, Any] | None:
+    """Return label issue payload."""
+    labels = data.get("label_issues")
+    if isinstance(labels, dict):
+        return labels.get(label.lower())
+    return None
+
+
 SENSOR_DESCRIPTIONS: tuple[GitHubSensorEntityDescription, ...] = (
     GitHubSensorEntityDescription(
         key="discussions_count",
@@ -311,6 +356,13 @@ SENSOR_DESCRIPTIONS: tuple[GitHubSensorEntityDescription, ...] = (
         },
     ),
     GitHubSensorEntityDescription(
+        key="trending_item",
+        translation_key="trending_item",
+        name="Trending item",
+        value_fn=_trending_state_value,
+        attr_fn=_trending_attributes,
+    ),
+    GitHubSensorEntityDescription(
         key="workflow_runs",
         translation_key="workflow_runs",
         name="Workflow runs",
@@ -341,13 +393,16 @@ async def async_setup_entry(
 ) -> None:
     """Set up GitHub sensor based on a config entry."""
     repositories = entry.runtime_data
-    async_add_entities(
-        (
+    labels: list[str] = entry.options.get(CONF_ISSUE_LABELS, [])
+    entities: list[SensorEntity] = []
+    for coordinator in repositories.values():
+        entities.extend(
             GitHubSensorEntity(coordinator, description)
             for description in SENSOR_DESCRIPTIONS
-            for coordinator in repositories.values()
-        ),
-    )
+        )
+        entities.extend(GitHubLabelIssueSensor(coordinator, label) for label in labels)
+
+    async_add_entities(entities)
 
 
 class GitHubSensorEntity(CoordinatorEntity[GitHubDataUpdateCoordinator], SensorEntity):
@@ -399,6 +454,13 @@ class GitHubSensorEntity(CoordinatorEntity[GitHubDataUpdateCoordinator], SensorE
     @property
     def icon(self) -> str | None:
         """Return a dynamic icon for workflow sensors."""
+        if self.entity_description.key == "trending_item":
+            state = _trending_state_value(self.coordinator.data)
+            return (
+                TRENDING_ICON_ACTIVE
+                if state != TRENDING_NO_ACTIVITY
+                else TRENDING_ICON_INACTIVE
+            )
         if self.entity_description.key not in {
             "workflow_runs",
             "workflow_activity",
@@ -406,3 +468,56 @@ class GitHubSensorEntity(CoordinatorEntity[GitHubDataUpdateCoordinator], SensorE
             return super().icon
         status = _workflow_status(self.coordinator.data)
         return WORKFLOW_ICON_MAP.get(status, "mdi:progress-question")
+
+
+class GitHubLabelIssueSensor(
+    CoordinatorEntity[GitHubDataUpdateCoordinator], SensorEntity
+):
+    """Sensor for issue counts per label."""
+
+    _attr_has_entity_name = True
+    _attr_icon = "mdi:tag-multiple"
+
+    def __init__(self, coordinator: GitHubDataUpdateCoordinator, label: str) -> None:
+        """Initialize label issue sensor."""
+        super().__init__(coordinator=coordinator)
+        self._label = label
+        slug = _label_slug(label)
+        repo = coordinator.repository
+        self._attr_unique_id = f"{coordinator.data.get('id')}_label_{slug}"
+        self._attr_name = f"{label} issues"
+        self._attr_device_info = DeviceInfo(
+            identifiers={(DOMAIN, repo)},
+            name=coordinator.data.get("full_name"),
+            manufacturer="GitHub",
+            configuration_url=f"https://github.com/{repo}",
+            entry_type=DeviceEntryType.SERVICE,
+        )
+
+    @property
+    def available(self) -> bool:
+        """Return True if label data is available."""
+        return (
+            super().available
+            and _label_issue_data(self.coordinator.data, self._label) is not None
+        )
+
+    @property
+    def native_value(self) -> StateType:
+        """Return open issue count for label."""
+        data = _label_issue_data(self.coordinator.data, self._label)
+        if not data:
+            return None
+        return data.get("count")
+
+    @property
+    def extra_state_attributes(self) -> Mapping[str, Any] | None:
+        """Return issue list and metadata."""
+        data = _label_issue_data(self.coordinator.data, self._label)
+        if not data:
+            return None
+        return {
+            "issues": data.get("issues", []),
+            "last_checked": data.get("last_checked"),
+            "label": self._label,
+        }

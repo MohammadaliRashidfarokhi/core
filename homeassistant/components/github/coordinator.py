@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import timedelta
+from datetime import datetime, timedelta
 from http import HTTPStatus
 from typing import Any
 
@@ -21,15 +21,24 @@ from homeassistant.const import EVENT_HOMEASSISTANT_STOP
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.aiohttp_client import SERVER_SOFTWARE
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
+from homeassistant.util import dt as dt_util
 
-from .const import LOGGER, REFRESH_EVENT_TYPES
+from .const import (
+    CONF_ISSUE_LABELS,
+    CONF_TRENDING_LOOKBACK_DAYS,
+    DEFAULT_ISSUE_LABELS,
+    DEFAULT_TRENDING_LOOKBACK_DAYS,
+    LOGGER,
+    REFRESH_EVENT_TYPES,
+    TRENDING_REFRESH_INTERVAL,
+)
 
 WORKFLOW_PAGE_SIZE = 25
 WORKFLOW_MINIMUM_RUNS = 5
 WORKFLOW_RECENT_RUNS = 5
 
 GRAPHQL_REPOSITORY_QUERY = """
-query ($owner: String!, $repository: String!) {
+query ($owner: String!, $repository: String!, $issueQuery: String!) {
   rateLimit {
     cost
     remaining
@@ -103,6 +112,43 @@ query ($owner: String!, $repository: String!) {
         }
       }
     }
+    trending_discussions: discussions(
+      first: 10
+      orderBy: {field: UPDATED_AT, direction: DESC}
+    ) {
+      nodes {
+        title
+        url
+        createdAt
+        updatedAt
+        comments {
+          totalCount
+        }
+        reactions {
+          totalCount
+        }
+      }
+    }
+  }
+  trending_issue_search: search(
+    query: $issueQuery
+    type: ISSUE
+    first: 10
+  ) {
+    nodes {
+      ... on Issue {
+        title
+        url
+        createdAt
+        updatedAt
+        comments {
+          totalCount
+        }
+        reactions {
+          totalCount
+        }
+      }
+    }
   }
 }
 """
@@ -135,6 +181,14 @@ class GitHubDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self.data = {}
         self._workflow_etag: str | None = None
         self._workflow_runs: dict[str, Any] = {"recent_runs": []}
+        self._trending_data: dict[str, Any] = {}
+        self._last_trending_fetch: datetime | None = None
+        self._trending_lookback_days = config_entry.options.get(
+            CONF_TRENDING_LOOKBACK_DAYS, DEFAULT_TRENDING_LOOKBACK_DAYS
+        )
+        self._issue_labels: list[str] = config_entry.options.get(
+            CONF_ISSUE_LABELS, DEFAULT_ISSUE_LABELS
+        )
 
         super().__init__(
             hass,
@@ -147,10 +201,19 @@ class GitHubDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     async def _async_update_data(self) -> GitHubResponseModel[dict[str, Any]]:
         """Update data."""
         owner, repository = self.repository.split("/")
+        lookback_start = dt_util.utcnow() - timedelta(days=self._trending_lookback_days)
+        issue_query = (
+            f"repo:{self.repository} is:issue updated:>={lookback_start.date()} "
+            "sort:updated-desc"
+        )
         try:
             response = await self._client.graphql(
                 query=GRAPHQL_REPOSITORY_QUERY,
-                variables={"owner": owner, "repository": repository},
+                variables={
+                    "owner": owner,
+                    "repository": repository,
+                    "issueQuery": issue_query,
+                },
             )
         except (GitHubConnectionException, GitHubRatelimitException) as exception:
             # These are expected and we dont log anything extra
@@ -163,6 +226,11 @@ class GitHubDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._last_response = response
         repository_data = response.data["data"]["repository"]
         repository_data["workflow_runs"] = await self._async_workflow_runs()
+        repository_data["trending"] = self._build_trending_data(
+            response.data["data"],
+            lookback_start,
+        )
+        repository_data["label_issues"] = await self._async_label_issues()
         return repository_data
 
     async def _async_workflow_runs(self) -> dict[str, Any]:
@@ -207,6 +275,118 @@ class GitHubDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
         self._workflow_runs = {"recent_runs": runs[:WORKFLOW_RECENT_RUNS]}
         return self._workflow_runs
+
+    def _build_trending_data(
+        self,
+        graph_data: dict[str, Any],
+        lookback_start: datetime,
+    ) -> dict[str, Any]:
+        """Return trending issue/discussion data with cached refresh."""
+        now = dt_util.utcnow()
+        if (
+            self._last_trending_fetch
+            and now - self._last_trending_fetch < TRENDING_REFRESH_INTERVAL
+        ):
+            return self._trending_data
+
+        issue_search = graph_data.get("trending_issue_search") or {}
+        repository_data = graph_data.get("repository") or {}
+        discussion_nodes = (
+            repository_data.get("trending_discussions", {}).get("nodes") or []
+        )
+        issue_nodes = issue_search.get("nodes") or []
+
+        def _parse_datetime(value: str | None) -> datetime | None:
+            if not value:
+                return None
+            return dt_util.parse_datetime(value)
+
+        def _score_item(item: dict[str, Any], *, item_type: str) -> dict[str, Any]:
+            comments = item.get("comments", {}).get("totalCount") or 0
+            reactions = item.get("reactions", {}).get("totalCount") or 0
+            updated_at = _parse_datetime(item.get("updatedAt"))
+            created_at = item.get("createdAt")
+            return {
+                "title": item.get("title"),
+                "url": item.get("url"),
+                "item_type": item_type,
+                "activity_score": comments + reactions,
+                "created_at": created_at,
+                "updated_at": updated_at,
+            }
+
+        items: list[dict[str, Any]] = []
+        for issue in issue_nodes:
+            if issue.get("__typename") and issue.get("__typename") != "Issue":
+                continue
+            candidate = _score_item(issue, item_type="issue")
+            if candidate["updated_at"] and candidate["updated_at"] < lookback_start:
+                continue
+            items.append(candidate)
+
+        for discussion in discussion_nodes:
+            candidate = _score_item(discussion, item_type="discussion")
+            if candidate["updated_at"] and candidate["updated_at"] < lookback_start:
+                continue
+            items.append(candidate)
+
+        best_item: dict[str, Any] | None = None
+        if items:
+            best_item = max(
+                items,
+                key=lambda item: (
+                    item["activity_score"],
+                    item["updated_at"] or datetime.min.replace(tzinfo=dt_util.UTC),
+                ),
+            )
+
+        trending = {
+            "title": best_item["title"] if best_item else None,
+            "url": best_item["url"] if best_item else None,
+            "item_type": best_item["item_type"] if best_item else None,
+            "activity_score": best_item["activity_score"] if best_item else 0,
+            "creation_date": best_item["created_at"] if best_item else None,
+            "lookback_days": self._trending_lookback_days,
+        }
+
+        self._trending_data = trending
+        self._last_trending_fetch = now
+        return trending
+
+    async def _async_label_issues(self) -> dict[str, Any]:
+        """Fetch open issue counts for configured labels."""
+        if not self._issue_labels:
+            return {}
+
+        headers = {
+            "Accept": "application/vnd.github+json",
+            "Authorization": f"Bearer {self._access_token}",
+            "User-Agent": SERVER_SOFTWARE,
+            "X-GitHub-Api-Version": "2022-11-28",
+        }
+        results: dict[str, Any] = {}
+        for label in self._issue_labels:
+            query = f'repo:{self.repository} state:open type:issue label:"{label}"'
+            params: list[tuple[str, str]] = [("q", query), ("per_page", "50")]
+            async with self._session.get(
+                "https://api.github.com/search/issues", headers=headers, params=params
+            ) as response:
+                response.raise_for_status()
+                payload = await response.json()
+            items = payload.get("items", [])
+            issues = [
+                {
+                    "number": item.get("number"),
+                    "url": item.get("html_url"),
+                }
+                for item in items
+            ]
+            results[label.lower()] = {
+                "count": payload.get("total_count", 0),
+                "issues": issues,
+                "last_checked": dt_util.utcnow().isoformat(),
+            }
+        return results
 
     def _workflow_headers(self, *, include_etag: bool) -> dict[str, str]:
         """Return headers for workflow run requests."""
