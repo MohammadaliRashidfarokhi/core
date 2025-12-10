@@ -133,6 +133,169 @@ A pre‑built dashboard can visualize:
 
 Using standard Lovelace markdown + entity cards.
 
+
+### Updated dashboard configuration example using Home Assistant built-in editor
+
+```
+views:
+  - title: Github Dashboard
+    path: github-dashboard
+    icon: mdi:progress-clock
+    cards:
+      - type: entities
+        title: Current run snapshot
+        entities:
+          - entity: sensor.home_assistant_core_workflow_runs
+            name: Run title
+          - type: attribute
+            entity: sensor.home_assistant_core_workflow_runs
+            attribute: head_branch
+            name: Branch
+          - type: attribute
+            entity: sensor.home_assistant_core_workflow_runs
+            attribute: status
+            name: Status
+          - type: attribute
+            entity: sensor.home_assistant_core_workflow_runs
+            attribute: conclusion
+            name: Conclusion
+          - type: attribute
+            entity: sensor.home_assistant_core_workflow_runs
+            attribute: run_started_at
+            name: Started at
+          - type: section
+            label: Aggregates (latest page)
+          - type: attribute
+            entity: sensor.home_assistant_core_workflow_runs
+            attribute: successful_runs
+            name: Successful
+          - type: attribute
+            entity: sensor.home_assistant_core_workflow_runs
+            attribute: failed_runs
+            name: Failed
+          - type: attribute
+            entity: sensor.home_assistant_core_workflow_runs
+            attribute: in_progress_runs
+            name: In progress
+      - type: grid
+        columns: 2
+        square: false
+        cards:
+          - type: markdown
+            title: Current workflow status
+            content: >-
+              {% set s =
+              state_attr('sensor.home_assistant_core_workflow_runs','status') %}
+              {% set branch =
+              state_attr('sensor.home_assistant_core_workflow_runs','head_branch')
+              %} {% set started =
+              state_attr('sensor.home_assistant_core_workflow_runs','run_started_at')
+              %} {% set url =
+              state_attr('sensor.home_assistant_core_workflow_runs','latest_run_url')
+              %} {% set icon_map = {
+                'success': '✅',
+                'failure': '❌',
+                'in_progress': '⏳',
+                'skipped': '⏭️'
+              } %} {% set icon = icon_map.get(s, '❔') %}
+
+              **Status:** {{ icon }} {{ s | replace('_',' ') if s else 'unknown'
+              }}
+
+              **Branch:** `{{ branch if branch else 'unknown' }}`
+
+              **Started:** {{ started[:16] if started else 'unknown' }}
+
+              {% if url %} [Open current run on GitHub]({{ url }}) {% endif %}
+          - type: markdown
+            title: Trending issue/discussion
+            content: >-
+              {% set title = states('sensor.home_assistant_core_trending_item')
+              %} {% set url =
+              state_attr('sensor.home_assistant_core_trending_item','url') %} {%
+              set score =
+              state_attr('sensor.home_assistant_core_trending_item','activity_score')
+              %} {% set kind =
+              state_attr('sensor.home_assistant_core_trending_item','item_type')
+              %} {% set lookback =
+              state_attr('sensor.home_assistant_core_trending_item','lookback_days')
+              %}
+
+              {% if title == 'No Trending Activity' %} 🔇 No trending activity
+              in the last {{ lookback }} days. {% else %} 🔥 **{{ title }}**
+
+              - Type: `{{ kind or 'unknown' }}` - Activity score: `{{ score if
+              score is not none else 0 }}` - Lookback window: `{{ lookback }}
+              day(s)`
+
+              {% if url %} [Open on GitHub]({{ url }}) {% endif %} {% endif %}
+      - type: grid
+        columns: 2
+        square: false
+        cards:
+          - type: markdown
+            title: Recent runs (top 5)
+            content: >-
+              {% set runs =
+              state_attr('sensor.home_assistant_core_workflow_runs','recent_runs')
+              or [] %} {% set icon_map = {
+                'success': '✅',
+                'failure': '❌',
+                'in_progress': '⏳',
+                'skipped': '⏭️'
+              } %} {% if runs %} {% for run in runs[:5] %} {% set icon =
+              icon_map.get(run.status, '❔') %} - **{{ icon }} {{
+              run.display_title }}**  
+                Status: `{{ run.status | replace('_',' ') }}`  
+                Branch: `{{ run.head_branch }}`  
+                Started: {{ run.run_started_at[:16] if run.run_started_at else 'unknown' }}  
+                [Open on GitHub]({{ run.html_url }})
+
+              {% endfor %} {% else %} No recent runs. {% endif %}
+          - type: markdown
+            title: GitHub label issues
+            content: >-
+              {% set labels = [
+                {'name': 'bug', 'entity': 'sensor.home_assistant_core_bug_issues'},
+                {'name': 'good first issue', 'entity': 'sensor.home_assistant_core_good_first_issue_issues'},
+                {'name': 'documentation', 'entity': 'sensor.home_assistant_core_documentation_issues'},
+                {'name': 'integration', 'entity': 'sensor.home_assistant_core_integration_issues'},
+              ] %}
+
+              {% for label in labels %} {% set ent = label.entity %} {% set
+              count = states(ent) %} {% set issues = state_attr(ent, 'issues')
+              or [] %} {% set last = state_attr(ent, 'last_checked') %}
+
+              ### {{ label.name | title }}
+
+              - Open issues: {{ count if count not in ['unavailable','unknown']
+              else 'unknown' }} - Last checked: {{ last or 'pending' }}
+
+              {% if issues %} **Issue links:** {% for issue in issues %} - [#{{
+              issue.number }}]({{ issue.url }}) {% endfor %} {% else %} No open
+              issues for this label. {% endif %}
+
+              --- {% endfor %}
+      - type: history-graph
+        entities:
+          - sensor.home_assistant_core_workflow_runs
+        hours_to_show: 24
+        refresh_interval: 0
+```
+
+### ⚠️ Dashboard Reusability Note
+
+The example dashboard configuration uses entity IDs that include the repository name (e.g., `sensor.home_assistant_core_workflow_runs`).
+Because Home Assistant generates entity IDs based on the repository selected during setup, dashboard configurations are not automatically reusable if:
+
+- you track a different repository,
+- you rename the repository, or
+- you use multiple repositories in parallel.
+
+If you change the repository, you must update the entity IDs in the dashboard YAML manually to match the new integration entities.
+
+This limitation comes from Home Assistant’s naming conventions and is expected behavior.
+
 ---
 
 ## ⚡ Summary of Enhancements
@@ -168,4 +331,4 @@ Using standard Lovelace markdown + entity cards.
 
 ## 📦 Final Notes
 
-These enhancements aim to make the GitHub integration far more useful for automation workflows, repository monitoring, and developer productivity—delivering real insights from GitHub directly into Home Assistant.
+These enhancements aim to make the GitHub integration far more useful for automation workflows, repository monitoring, and developer productivity – delivering real insights from GitHub directly into Home Assistant.
